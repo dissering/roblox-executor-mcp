@@ -29,6 +29,26 @@ end
 end
 end
 
+function i.Destroy(j)
+j.Connected=false
+for k,l in{"AliveThread","PollThread","ProbeThread"}do
+local m=j[l]
+j[l]=nil
+if m then pcall(task.cancel,m)end
+end
+for k,l in{"MessageConnection","CloseConnection"}do
+local m=j[l]
+j[l]=nil
+if m then m:Disconnect()end
+end
+if j.WebSocket then
+pcall(function()j.WebSocket:Close()end)
+j.WebSocket=nil
+end
+table.clear(j.Callbacks)
+if j.RawCallbacks then table.clear(j.RawCallbacks)end
+end
+
 function i.HandleMessage(j,k)
 if j.Callbacks[k.type]then
 local l,m=pcall(function()
@@ -92,9 +112,11 @@ if l then
 k=m
 end
 end)
+j.ProbeThread=l
 
 local m=os.clock()
 repeat task.wait(0.05)until k~=nil or os.clock()-m>5
+j.ProbeThread=nil
 
 if k==nil then
 task.cancel(l)
@@ -163,14 +185,12 @@ k.Connected=true
 k.Callbacks={}
 k.ClientId=nil
 
-
-k.WebSocket:Send(c:JSONEncode(f()))
-
 k.AliveThread=task.spawn(function()
 local s=0
-while task.wait(1)do
+while k.Connected do
+task.wait(1)
 if not k.Connected then
-continue
+break
 end
 
 if k:IsAlive()then
@@ -193,7 +213,7 @@ end)
 end)
 
 
-k.WebSocket.OnMessage:Connect(function(s)
+k.MessageConnection=k.WebSocket.OnMessage:Connect(function(s)
 local t=c:JSONDecode(s)
 
 
@@ -209,9 +229,17 @@ end
 end)
 
 
-k.WebSocket.OnClose:Connect(function()
+k.CloseConnection=k.WebSocket.OnClose:Connect(function()
 k.Connected=false
 end)
+
+local s,t=pcall(function()
+k.WebSocket:Send(c:JSONEncode(f()))
+end)
+if not s then
+k:Destroy()
+error(t)
+end
 
 return k
 end
@@ -2939,6 +2967,7 @@ q(b,m)
 end
 
 m:WaitForDisconnect()
+m:Destroy()
 
 if e.bridge==m then
 e.bridge=nil

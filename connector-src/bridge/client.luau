@@ -29,6 +29,26 @@ local BaseBridge = {}; do
         end
     end
 
+    function BaseBridge:Destroy()
+        self.Connected = false
+        for _, field in { "AliveThread", "PollThread", "ProbeThread" } do
+            local thread = self[field]
+            self[field] = nil
+            if thread then pcall(task.cancel, thread) end
+        end
+        for _, field in { "MessageConnection", "CloseConnection" } do
+            local connection = self[field]
+            self[field] = nil
+            if connection then connection:Disconnect() end
+        end
+        if self.WebSocket then
+            pcall(function() self.WebSocket:Close() end)
+            self.WebSocket = nil
+        end
+        table.clear(self.Callbacks)
+        if self.RawCallbacks then table.clear(self.RawCallbacks) end
+    end
+
     function BaseBridge:HandleMessage(data)
         if self.Callbacks[data.type] then
             local success, result = pcall(function()
@@ -92,9 +112,11 @@ local BaseBridge = {}; do
                     response = data
                 end
             end)
+            self.ProbeThread = thread
 
             local start = os.clock()
             repeat task.wait(0.05) until response ~= nil or os.clock() - start > 5
+            self.ProbeThread = nil
 
             if response == nil then
                 task.cancel(thread)
@@ -163,14 +185,12 @@ local WebSocketBridge = setmetatable({}, {__index = BaseBridge}); do
         self.Callbacks = {}
         self.ClientId = nil
 
-        --// Send registration \\--
-        self.WebSocket:Send(HttpService:JSONEncode(GetRegistrationInfo()))
-
         self.AliveThread = task.spawn(function()
             local consecutiveFailures = 0
-            while task.wait(1) do
+            while self.Connected do
+                task.wait(1)
                 if not self.Connected then
-                    continue
+                    break
                 end
 
                 if self:IsAlive() then
@@ -193,7 +213,7 @@ local WebSocketBridge = setmetatable({}, {__index = BaseBridge}); do
         end)
     
         --// On Message \\--
-        self.WebSocket.OnMessage:Connect(function(message)
+        self.MessageConnection = self.WebSocket.OnMessage:Connect(function(message)
             local data = HttpService:JSONDecode(message)
 
             --// Handle registration response \\--
@@ -209,9 +229,17 @@ local WebSocketBridge = setmetatable({}, {__index = BaseBridge}); do
         end)
     
         --// On Close \\--
-        self.WebSocket.OnClose:Connect(function()
+        self.CloseConnection = self.WebSocket.OnClose:Connect(function()
             self.Connected = false
         end)
+
+        local registered, registrationError = pcall(function()
+            self.WebSocket:Send(HttpService:JSONEncode(GetRegistrationInfo()))
+        end)
+        if not registered then
+            self:Destroy()
+            error(registrationError)
+        end
     
         return self
     end

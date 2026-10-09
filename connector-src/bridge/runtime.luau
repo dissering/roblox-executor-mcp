@@ -52,6 +52,7 @@ while true do
     end
 
     Bridge:WaitForDisconnect()
+    Bridge:Destroy()
 
     if ScriptMappingPipeline.bridge == Bridge then
         ScriptMappingPipeline.bridge = nil

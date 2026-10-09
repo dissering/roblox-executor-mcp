@@ -25,7 +25,6 @@ export function setInstanceRole(role: InstanceRole): void {
 
 // ─── Primary-mode routing state ───────────────────────────────────────────────
 export const httpResponseResolvers: Map<string, ResponseResolver> = new Map();
-export const requestToClientId: Map<string, string> = new Map();
 
 export const relayClients: Set<WebSocket> = new Set();
 export const relayRequestOrigin: Map<string, WebSocket> = new Map();
@@ -43,13 +42,18 @@ export function setRelaySocket(ws: WebSocket | null): void {
 }
 
 export function resetPrimaryState(): void {
+  for (const [id, resolver] of httpResponseResolvers) {
+    resolver({ id, error: "Primary connection reset." });
+  }
   httpResponseResolvers.clear();
-  requestToClientId.clear();
   relayClients.clear();
   relayRequestOrigin.clear();
 }
 
 export function resetSecondaryState(): void {
+  for (const [id, resolver] of secondaryResponseResolvers) {
+    resolver({ id, error: "Secondary connection reset." });
+  }
   secondaryResponseResolvers.clear();
 }
 
@@ -78,6 +82,7 @@ export function GetResponseOfIdFromClient(
   id: string,
   timeoutMs: number = TOOL_RESPONSE_TIMEOUT
 ): Promise<RobloxResponse> {
+  const resolvers = instanceRole === "secondary" ? secondaryResponseResolvers : httpResponseResolvers;
   return new Promise((resolve) => {
     let settled = false;
     let timeout: NodeJS.Timeout;
@@ -86,16 +91,11 @@ export function GetResponseOfIdFromClient(
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      if (resolvers.get(id) === resolveOnce) resolvers.delete(id);
       resolve(data);
     };
 
     timeout = setTimeout(() => {
-      if (instanceRole === "secondary") {
-        secondaryResponseResolvers.delete(id);
-      } else {
-        httpResponseResolvers.delete(id);
-      }
-
       resolveOnce({
         id,
         output: undefined,
@@ -103,11 +103,7 @@ export function GetResponseOfIdFromClient(
       });
     }, timeoutMs);
 
-    if (instanceRole === "secondary") {
-      secondaryResponseResolvers.set(id, resolveOnce);
-      return;
-    }
-    httpResponseResolvers.set(id, resolveOnce);
+    resolvers.set(id, resolveOnce);
   });
 }
 
@@ -138,12 +134,11 @@ export function SendArbitraryDataToClient(
 
     const requestId = id ?? crypto.randomUUID();
     const message = { id: requestId, ...data, type };
-    requestToClientId.set(requestId, target.clientId);
     SendToClient(target, JSON.stringify(message));
     return requestId;
   }
 
-  // No clientId: broadcast to all active clients (most recent wins for routing)
+  // No clientId: broadcast to all active clients.
   const activeClients = getActiveClients();
   if (activeClients.length === 0) return null;
 
@@ -151,7 +146,6 @@ export function SendArbitraryDataToClient(
   const message = { id: requestId, ...data, type };
 
   for (const target of activeClients) {
-    requestToClientId.set(requestId, target.clientId);
     SendToClient(target, JSON.stringify(message));
   }
 
@@ -162,21 +156,8 @@ export function SendArbitraryDataToClient(
 export function handleRobloxResponse(data: RobloxResponse): void {
   if (!data.id) return;
 
-  // If the request originated from a relayed secondary, forward it back.
-  const originRelay = relayRequestOrigin.get(data.id);
-  if (originRelay && originRelay.readyState === WebSocket.OPEN) {
-    originRelay.send(JSON.stringify(data));
-    relayRequestOrigin.delete(data.id);
-    requestToClientId.delete(data.id);
-    return;
-  }
-  relayRequestOrigin.delete(data.id);
-
-  // Otherwise it's a local primary request.
   const resolver = httpResponseResolvers.get(data.id);
   if (resolver) {
     resolver(data);
-    httpResponseResolvers.delete(data.id);
   }
-  requestToClientId.delete(data.id);
 }

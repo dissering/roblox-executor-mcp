@@ -7,6 +7,7 @@ local Concurrency = require("../connector-src/mapping/concurrency")
 local JobStatus = require("../connector-src/mapping/job-status")
 local FailedResync = require("../connector-src/mapping/failed-resync")
 local DecompilerClientFactory = require("../connector-src/decompiler/client")
+local BridgeClientFactory = require("../connector-src/bridge/client")
 
 local state = ScriptMappingState.new()
 state.configuredWorkers = 24
@@ -212,5 +213,129 @@ table.remove(scheduled, 1)()
 assert(pool.ActiveWorkers == 1 and #scheduled == 1, "new work starts only after stale work releases capacity")
 table.remove(scheduled, 1)()
 assert(pool.ActiveWorkers == 0 and ran[1] == "new" and ran[2] == nil)
+
+local cancelledThreads = {}
+local bridgeTask = {
+    spawn = function(callback)
+        local thread = coroutine.create(callback)
+        assert(coroutine.resume(thread))
+        return thread
+    end,
+    wait = function()
+        coroutine.yield()
+    end,
+    cancel = function(thread)
+        cancelledThreads[thread] = true
+    end,
+}
+
+local function NewSignal()
+    local signal = { connections = {} }
+    function signal:Connect(callback)
+        local connection = { callback = callback }
+        function connection:Disconnect()
+            self.callback = nil
+        end
+        table.insert(self.connections, connection)
+        return connection
+    end
+    function signal:Fire(value)
+        for _, connection in self.connections do
+            if connection.callback then connection.callback(value) end
+        end
+    end
+    function signal:ActiveCount()
+        local count = 0
+        for _, connection in self.connections do
+            if connection.callback then count += 1 end
+        end
+        return count
+    end
+    return signal
+end
+
+local sockets = {}
+local failRegistration = false
+local blockProbe = false
+setfenv(BridgeClientFactory, setmetatable({
+    task = bridgeTask,
+    request = function()
+        if blockProbe then coroutine.yield() end
+        return { StatusCode = 200 }
+    end,
+    WebSocket = {
+        connect = function()
+            local socket = { OnMessage = NewSignal(), OnClose = NewSignal(), closes = 0 }
+            function socket:Send(_message)
+                if failRegistration then error("registration failed") end
+                self.OnMessage:Fire({ type = "registered", clientId = "client" })
+            end
+            function socket:Close()
+                self.closes += 1
+                self.OnClose:Fire()
+            end
+            table.insert(sockets, socket)
+            return socket
+        end,
+    },
+}, { __index = getfenv(BridgeClientFactory) }))
+
+local bridgeClient = BridgeClientFactory({
+    HttpService = {
+        JSONEncode = function(_, value) return value end,
+        JSONDecode = function(_, value) return value end,
+    },
+    BridgeURL = "test",
+    WebSocketAvailable = true,
+    GetRegistrationInfo = function() return { type = "register" } end,
+})
+
+local function ConnectBridge()
+    local bridge
+    local constructor = coroutine.create(function()
+        bridge = bridgeClient.CreateBridge()
+    end)
+    for _ = 1, 10 do
+        if coroutine.status(constructor) == "dead" then break end
+        assert(coroutine.resume(constructor))
+    end
+    assert(bridge ~= nil, "bridge constructor must finish")
+    return bridge
+end
+
+for _ = 1, 20 do
+    local bridge = ConnectBridge()
+    local socket = bridge.WebSocket
+    local aliveThread = bridge.AliveThread
+    assert(bridge.ClientId == "client", "registration listeners must be installed before sending")
+    bridge:BindToTypeRaw("test", function() return "test" end)
+    socket.OnClose:Fire()
+    assert(coroutine.resume(aliveThread))
+    assert(coroutine.status(aliveThread) == "dead", "disconnected heartbeat must exit")
+    bridge:Destroy()
+    bridge:Destroy()
+    assert(cancelledThreads[aliveThread], "cleanup must cancel the old heartbeat")
+    assert(socket.OnMessage:ActiveCount() == 0 and socket.OnClose:ActiveCount() == 0)
+    assert(bridge.WebSocket == nil and bridge.AliveThread == nil)
+    assert(next(bridge.Callbacks) == nil and next(bridge.RawCallbacks) == nil)
+end
+
+local probingBridge = ConnectBridge()
+blockProbe = true
+assert(coroutine.resume(probingBridge.AliveThread))
+local probeThread = probingBridge.ProbeThread
+assert(probeThread ~= nil, "pending heartbeat requests must be tracked")
+probingBridge:Destroy()
+assert(cancelledThreads[probeThread] and probingBridge.ProbeThread == nil)
+blockProbe = false
+
+failRegistration = true
+local fallbackBridge = ConnectBridge()
+local failedSocket = sockets[#sockets]
+assert(failedSocket.closes > 0, "failed registration must close the abandoned socket")
+assert(failedSocket.OnMessage:ActiveCount() == 0 and failedSocket.OnClose:ActiveCount() == 0)
+local pollThread = fallbackBridge.PollThread
+fallbackBridge:Destroy()
+assert(cancelledThreads[pollThread], "HTTP cleanup must cancel polling")
 
 print("connector module lifecycle tests passed")

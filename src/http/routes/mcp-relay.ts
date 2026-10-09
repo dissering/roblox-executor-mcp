@@ -1,8 +1,9 @@
-import type { WebSocket } from "ws";
+import { WebSocket } from "ws";
 import {
   relayClients,
   relayRequestOrigin,
-  requestToClientId,
+  GetResponseOfIdFromClient,
+  httpResponseResolvers,
   SendToClient,
 } from "../../bridge/handlers/shared/communication.js";
 import {
@@ -17,6 +18,8 @@ interface RelayMessage {
   targetClientId?: string;
   [key: string]: unknown;
 }
+
+const RELAY_RESPONSE_TIMEOUT_MS = 120_000;
 
 export function WS(ws: WebSocket): void {
   console.error(`[Primary] Relay client connected. Total: ${relayClients.size + 1}`);
@@ -65,10 +68,6 @@ export function WS(ws: WebSocket): void {
         return;
       }
 
-      if (message.id) {
-        relayRequestOrigin.set(message.id, ws);
-      }
-
       const targetClientId = message.targetClientId;
       if (targetClientId) {
         delete message.targetClientId;
@@ -76,7 +75,16 @@ export function WS(ws: WebSocket): void {
 
       const target = resolveTargetClient(targetClientId);
       if (target) {
-        if (message.id) requestToClientId.set(message.id, target.clientId);
+        if (message.id) {
+          const id = message.id;
+          relayRequestOrigin.set(id, ws);
+          void GetResponseOfIdFromClient(id, RELAY_RESPONSE_TIMEOUT_MS).then((response) => {
+            relayRequestOrigin.delete(id);
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(response));
+          }).catch((error) => {
+            console.error("[Primary] Error forwarding relay response:", error);
+          });
+        }
         SendToClient(target, JSON.stringify(message));
       } else if (message.id) {
         relayRequestOrigin.delete(message.id);
@@ -97,7 +105,9 @@ export function WS(ws: WebSocket): void {
     relayClients.delete(ws);
     console.error(`[Primary] Relay client disconnected. Total: ${relayClients.size}`);
     for (const [id, origin] of relayRequestOrigin.entries()) {
-      if (origin === ws) relayRequestOrigin.delete(id);
+      if (origin !== ws) continue;
+      httpResponseResolvers.get(id)?.({ id, error: "Relay client disconnected." });
+      relayRequestOrigin.delete(id);
     }
   });
 

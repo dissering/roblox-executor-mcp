@@ -75,7 +75,7 @@ interface SemanticVectorSession {
 }
 
 const vectorSessionsByKey: Map<string, SemanticVectorSession> = new Map();
-const sourceChunkTemplatesByHash: Map<string, SourceChunkTemplate[]> = new Map();
+let sourceChunkTemplates = new WeakMap<StoredScriptSource, SourceChunkTemplate[]>();
 const inFlightEmbeddingsByKey: Map<string, Promise<number[]>> = new Map();
 
 function sessionKey(index: ScriptSourceIndex, settings: SemanticSettings): string {
@@ -94,12 +94,11 @@ function chunkId(script: StoredScriptSource, startLine: number, endLine: number)
 }
 
 function chunkTemplatesForSource(script: StoredScriptSource): SourceChunkTemplate[] {
-  const cacheKey = `${script.sourceHash}:${script.path}`;
-  const cached = sourceChunkTemplatesByHash.get(cacheKey);
+  const cached = sourceChunkTemplates.get(script);
   if (cached) return cached;
 
   const chunks = buildSemanticChunkTemplates(script);
-  sourceChunkTemplatesByHash.set(cacheKey, chunks);
+  sourceChunkTemplates.set(script, chunks);
   return chunks;
 }
 
@@ -670,6 +669,7 @@ export function clearSemanticIndexForClient(clientId: string): void {
 export function clearAllSemanticIndexes(): void {
   vectorSessionsByKey.clear();
   inFlightEmbeddingsByKey.clear();
+  sourceChunkTemplates = new WeakMap();
 }
 
 export function getScriptIndexStatus(
