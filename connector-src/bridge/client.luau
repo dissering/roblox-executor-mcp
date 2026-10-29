@@ -1,4 +1,6 @@
 return function(context)
+local request = context.Request or request
+local ConnectWebSocket = context.ConnectWebSocket
 local HttpService = context.HttpService
 local BridgeURL = context.BridgeURL
 local WebSocketAvailable = context.WebSocketAvailable
@@ -143,7 +145,7 @@ local WebSocketBridge = setmetatable({}, {__index = BaseBridge}); do
         local wsConnection = nil
         local connectionThread = task.spawn(function()
             local success, result = pcall(function()
-                return WebSocket.connect("ws://" .. BridgeURL)
+                return ConnectWebSocket("ws://" .. BridgeURL)
             end)
             if success then
                 wsConnection = result

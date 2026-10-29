@@ -23,8 +23,8 @@ export default function register(server: McpServer): void {
       console.error(`Executing code in thread ${threadContext}...`);
       return sendFireAndForget({
         type: "execute",
-        data: { source: `setthreadidentity(${threadContext})\n${code}` },
-        successMessage: `Code has been scheduled to be run in thread context ${threadContext}.`,
+        data: { source: code, threadContext },
+        successMessage: `Code scheduled (requested thread context ${threadContext}; uses existing permissions if unsupported).`,
       });
     }
   );

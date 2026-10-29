@@ -1,5 +1,6 @@
 return function(context)
 local CreateBridge = context.CreateBridge
+local Environment = context.Environment
 local WaitForBridgeClientId = context.WaitForBridgeClientId
 local ScriptMappingPipeline = context.ScriptMappingPipeline
 local StartUploadQueue = context.StartUploadQueue
@@ -26,7 +27,7 @@ while true do
             ResetScriptMappingState(clientId)
         end
 
-        if not getgenv().DisableInitialScriptDecompMapping then
+        if not Environment.DisableInitialScriptDecompMapping then
             StartScriptMapping(clientId)
             StartFailedScriptResync()
             ResumeDeferredScriptMappings()

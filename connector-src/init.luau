@@ -1,15 +1,18 @@
 -- Source entrypoint for connector.luau. Build the standalone artifact with
 -- `npm run build:connector`; edit connector-src modules, not the generated file.
 --// Variables \\--
-if getgenv().MCP_Loaded == true then
+local Compatibility = require("./compat").new()
+local Environment = Compatibility.Environment
+if Environment.MCP_Loaded == true then
     return
 end
 
-getgenv().MCP_Loaded = true
+assert(type(loadstring) == "function", "This executor needs loadstring to run the MCP connector.")
+assert(Compatibility.Info.available.request, "This executor needs an HTTP request function to connect to MCP.")
 
-local BridgeURL = getgenv().BridgeURL or getgenv().bridgeurl or ... or "localhost:16384"
-getgenv().BridgeURL = BridgeURL
-getgenv().bridgeurl = BridgeURL
+local BridgeURL = Environment.BridgeURL or Environment.bridgeurl or ... or "localhost:16384"
+Environment.BridgeURL = BridgeURL
+Environment.bridgeurl = BridgeURL
 
 --// Wait for game to load \\--
 if not game:IsLoaded() then
@@ -17,14 +20,19 @@ if not game:IsLoaded() then
 end
 
 --// Services \\--
-local cloneref = cloneref or function(x) return x end
+local cloneref = Compatibility.CloneReference
+local function OptionalService(name)
+    local ok, service = pcall(function() return cloneref(game:GetService(name)) end)
+    return ok and service or nil
+end
 
-local RobloxReplicatedStorage: RobloxReplicatedStorage = cloneref(game:GetService("RobloxReplicatedStorage"))
-local VirtualInputManager: VirtualInputManager = cloneref(Instance.new("VirtualInputManager"))
+local RobloxReplicatedStorage = OptionalService("RobloxReplicatedStorage")
+local inputOk, VirtualInputManager = pcall(function() return cloneref(Instance.new("VirtualInputManager")) end)
+if not inputOk then VirtualInputManager = nil end
 local MarketplaceService: MarketplaceService = cloneref(game:GetService("MarketplaceService"))
-local CoreGui: CoreGui = cloneref(game:GetService("CoreGui"))
-local CorePackages: CorePackages = cloneref(game:GetService("CorePackages"))
-local ScriptContext: ScriptContext = cloneref(game:GetService("ScriptContext"))
+local CoreGui = OptionalService("CoreGui")
+local CorePackages = OptionalService("CorePackages")
+local ScriptContext = OptionalService("ScriptContext")
 local HttpService: HttpService = cloneref(game:GetService("HttpService"))
 local LogService: LogService = cloneref(game:GetService("LogService"))
 local Players: Players = cloneref(game:GetService("Players"))
@@ -59,7 +67,14 @@ local getscriptbytecode = getscriptbytecode or function(_) error("Unable to get 
 local GetScriptHash = type(getscripthash) == "function" and getscripthash or nil
 local BuiltInDecompile = type(decompile) == "function" and decompile or nil
 
-local LuaEncode = loadstring(game:HttpGet("https://raw.githubusercontent.com/chadhyatt/LuaEncode/refs/heads/master/src/LuaEncode.lua"))()
+local encodeResponse = Compatibility.Request({
+    Url = "https://raw.githubusercontent.com/chadhyatt/LuaEncode/refs/heads/master/src/LuaEncode.lua",
+    Method = "GET",
+})
+assert(encodeResponse.StatusCode == 200 and type(encodeResponse.Body) == "string", "Unable to download the connector serializer.")
+local encodeChunk, encodeError = loadstring(encodeResponse.Body)
+assert(encodeChunk, encodeError)
+local LuaEncode = encodeChunk()
 
 --// Bounded serialization: cap depth / entries / string length and render
 --// Instances as their path so structured tool responses can't flood the
@@ -128,13 +143,10 @@ local function StripDecompilerBanner(source)
     return (string.gsub(source, "^%s*%-%-[^\n]*[Dd]ecompiled[^\n]*\n", "", 1))
 end
 
-local getnilinstances = getnilinstances or function() return {} end
+local getnilinstances = Compatibility.GetNilInstances
 
 --// Compatibility Check \\--
-local WebSocketAvailable = (
-    typeof(WebSocket) ~= "nil" and
-    typeof(WebSocket.connect) == "function"
-) and (getgenv().DisableWebSocket ~= true)
+local WebSocketAvailable = Compatibility.ConnectWebSocket ~= nil and Environment.DisableWebSocket ~= true
 
 --// Registration Info \\--
 local function GenerateSessionGuid()
@@ -158,11 +170,11 @@ end
 
 local function GetStableClientSessionId()
     local identityKey = GetClientIdentityKey()
-    if type(getgenv().MCP_ClientSessionId) ~= "string" or getgenv().MCP_ClientIdentityKey ~= identityKey then
-        getgenv().MCP_ClientSessionId = GenerateSessionGuid()
-        getgenv().MCP_ClientIdentityKey = identityKey
+    if type(Environment.MCP_ClientSessionId) ~= "string" or Environment.MCP_ClientIdentityKey ~= identityKey then
+        Environment.MCP_ClientSessionId = GenerateSessionGuid()
+        Environment.MCP_ClientIdentityKey = identityKey
     end
-    return getgenv().MCP_ClientSessionId
+    return Environment.MCP_ClientSessionId
 end
 
 local function GetRegistrationInfo()
@@ -185,6 +197,8 @@ end
 
 --// Bridge client \\--
 local BridgeClient = require("./bridge/client")({
+    Request = Compatibility.Request,
+    ConnectWebSocket = Compatibility.ConnectWebSocket,
     HttpService = HttpService,
     BridgeURL = BridgeURL,
     WebSocketAvailable = WebSocketAvailable,
@@ -203,7 +217,7 @@ local PreparedScript = require("./decompiler/prepared-script")
 local ScriptMappingPipeline = ScriptMappingState.new()
 local ScriptMappingWorkerCount = math.max(
     1,
-    math.min(math.floor(tonumber(getgenv().MCP_ScriptMappingWorkers) or 24), 64)
+    math.min(math.floor(tonumber(Environment.MCP_ScriptMappingWorkers) or 24), 64)
 )
 local MappingConcurrency = require("./mapping/concurrency").new(
     ScriptMappingPipeline,
@@ -211,14 +225,14 @@ local MappingConcurrency = require("./mapping/concurrency").new(
 )
 local FailedScriptResyncInterval = math.max(
     5,
-    math.min(tonumber(getgenv().MCP_FailedScriptResyncInterval) or 30, 600)
+    math.min(tonumber(Environment.MCP_FailedScriptResyncInterval) or 30, 600)
 )
 local FailedScriptResync = require("./mapping/failed-resync").new(ScriptMappingPipeline, {
     IntervalSeconds = FailedScriptResyncInterval,
     MaxDelaySeconds = math.max(FailedScriptResyncInterval, 300),
     BatchSize = math.max(
         1,
-        math.min(math.floor(tonumber(getgenv().MCP_FailedScriptResyncBatchSize) or 8), 32)
+        math.min(math.floor(tonumber(Environment.MCP_FailedScriptResyncBatchSize) or 8), 32)
     ),
 })
 local MappingJobStatus = require("./mapping/job-status").new(
@@ -226,12 +240,14 @@ local MappingJobStatus = require("./mapping/job-status").new(
     FailedScriptResync
 )
 local UploadClient = require("./mapping/upload-client")({
+    Request = Compatibility.Request,
     ScriptMappingPipeline = ScriptMappingPipeline,
     HttpService = HttpService,
     BridgeURL = BridgeURL,
     JobStatus = MappingJobStatus,
 })
 local DecompilerClient = require("./decompiler/client")({
+    Request = Compatibility.Request,
     ScriptMappingPipeline = ScriptMappingPipeline,
     HttpService = HttpService,
     BridgeURL = BridgeURL,
@@ -286,7 +302,10 @@ local function WaitForBridgeClientId(Bridge)
     return nil
 end
 
+Environment.MCP_Loaded = true
 require("./bridge/runtime")({
+    Compatibility = Compatibility,
+    Environment = Environment,
     CreateBridge = CreateBridge,
     WaitForBridgeClientId = WaitForBridgeClientId,
     ScriptMappingPipeline = ScriptMappingPipeline,

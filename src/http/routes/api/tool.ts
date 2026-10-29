@@ -386,7 +386,8 @@ export async function POST(req: IncomingMessage, res: ServerResponse): Promise<v
       const code = params.code as string;
       if (!code) return jsonErr(res, "Missing 'code' parameter.");
       const timeout = Math.min(Math.max(Number(params.timeout) || 15000, 1000), 120000);
-      data.source = `setthreadidentity(8);${code}`;
+      data.source = code;
+      data.threadContext = 8;
       const callId = SendArbitraryDataToClient(robloxType, data, undefined, target.clientId);
       if (!callId) return jsonErr(res, "Failed to dispatch to client.");
       if (callId === "INVALID_CLIENT") return jsonErr(res, "Invalid client.");
@@ -404,7 +405,8 @@ export async function POST(req: IncomingMessage, res: ServerResponse): Promise<v
     if (type === "execute") {
       const code = params.code as string;
       if (!code) return jsonErr(res, "Missing 'code' parameter.");
-      data.source = `setthreadidentity(8);${code}`;
+      data.source = code;
+      data.threadContext = 8;
       const callId = SendArbitraryDataToClient(robloxType, data, undefined, target.clientId);
       if (!callId) return jsonErr(res, "Failed to dispatch to client.");
       if (callId === "INVALID_CLIENT") return jsonErr(res, "Invalid client.");

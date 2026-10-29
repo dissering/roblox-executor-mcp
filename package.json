@@ -16,7 +16,7 @@
     "build:connector": "darklua process connector-src/init.luau connector.luau",
     "build": "node scripts/clean-dist.mjs && tsc && node scripts/copy-assets.mjs",
     "build:all": "npm run build:connector && npm run build",
-    "test": "npm run build:all && node --test tests/*.test.mjs && luau tests/connector-modules.test.luau",
+    "test": "npm run build:all && node --test tests/*.test.mjs && luau tests/connector-modules.test.luau && luau tests/executor-compat.test.luau",
     "dev": "node scripts/dev-server.mjs",
     "dev:dist": "bun run build && bun scripts/dev-server.mjs --dist",
     "install:tailscale": "bun scripts/install-tailscale.mjs",

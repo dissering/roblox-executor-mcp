@@ -8,13 +8,13 @@ export default function register(server: McpServer): void {
     {
       title: "Click a GuiButton",
       description:
-        "Click a Roblox TextButton or ImageButton by firing its GUI signals. Use when direct UI activation is needed inside the active client.",
+        "Click a Roblox TextButton or ImageButton via firesignal, or a virtual mouse click when firesignal is absent. The fallback requires a visible, unobstructed button and VirtualInputManager permission.",
       inputSchema: z.object({
         path: z.string().describe("The instance path to the Button"),
         action: z
           .string()
           .describe(
-            "The specific signal to fire (e.g., 'Activated', 'MouseButton1Click'). If omitted, fires all standard click signals."
+            "The signal to fire. Without firesignal, only Activated, MouseButton1Click, MouseButton2Click or an omitted action support a virtual click; down-only signals require firesignal."
           )
           .optional(),
       }),

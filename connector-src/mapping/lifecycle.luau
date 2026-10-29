@@ -27,6 +27,16 @@ local MappingRetryMaxSeconds = 8
 local SourceCacheLookupBatchMax = 256
 local HandleMappingWorkerError
 
+local function GetDataModelScripts()
+    local ok, scripts = pcall(function() return game:QueryDescendants("LuaSourceContainer") end)
+    if ok and type(scripts) == "table" then return scripts end
+    local result = {}
+    for _, instance in game:GetDescendants() do
+        if instance:IsA("LuaSourceContainer") then table.insert(result, instance) end
+    end
+    return result
+end
+
 local function PublishCurrentMappingStatus()
     JobStatus:Publish()
 end
@@ -209,7 +219,7 @@ local function GetScriptByDebugId(debugId)
         return CachedInstance
     end
 
-    for _, script in game:QueryDescendants("LuaSourceContainer") do
+    for _, script in GetDataModelScripts() do
         if script:IsA("Script") and script.RunContext == Enum.RunContext.Server then continue end
         if script:GetDebugId() ~= debugId then continue end
         
@@ -275,9 +285,9 @@ local function IsCandidateScriptForMapping(script)
 
     local IsRobloxScript = (
         script.RobloxLocked or
-        script:IsDescendantOf(CoreGui) or
-        script:IsDescendantOf(CorePackages) or
-        script:IsDescendantOf(ScriptContext)
+        (CoreGui and script:IsDescendantOf(CoreGui)) or
+        (CorePackages and script:IsDescendantOf(CorePackages)) or
+        (ScriptContext and script:IsDescendantOf(ScriptContext))
     )
     if IsRobloxScript then return false end
 
@@ -339,7 +349,7 @@ local function StartScriptMapping(clientId)
         local scanCompleted = false
         local success, scanError = pcall(function()
             local CategoriesToMap = {
-                game:QueryDescendants("LuaSourceContainer"),
+                GetDataModelScripts(),
                 getnilinstances()
             }
             local seenDebugIds = {}

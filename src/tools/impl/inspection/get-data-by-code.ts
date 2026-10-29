@@ -33,7 +33,7 @@ export default function register(server: McpServer): void {
 
       return sendAndWait({
         type: "get-data-by-code",
-        data: { source: `setthreadidentity(${threadContext});${code}` },
+        data: { source: code, threadContext },
         timeoutMs: clampedTimeout,
         maxOutputChars,
         stampClient: true,
