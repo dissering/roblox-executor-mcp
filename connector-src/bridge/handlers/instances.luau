@@ -31,18 +31,23 @@ local RobloxReplicatedStorage = context.RobloxReplicatedStorage
     end)
 
     Bridge:BindToType("get-game-info", function(data)
-        local productInfo = MarketplaceService:GetProductInfo(game.PlaceId)
+        local productOk, productInfo = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end)
+        if not productOk or type(productInfo) ~= "table" then productInfo = {} end
+        local creator = productInfo.Creator or {}
+        local serverType = "Unknown"
+        pcall(function() serverType = RobloxReplicatedStorage.GetServerType:InvokeServer() end)
 
         local info = {
             PlaceId = game.PlaceId,
             GameId = game.GameId,
             PlaceVersion = game.PlaceVersion,
             PlaceName = productInfo.Name,
-            Creator = productInfo.Creator.Name,
-            CreatorType = tostring(productInfo.Creator.CreatorType),
-            CreatorId = productInfo.Creator.CreatorTargetId,
+            Creator = creator.Name,
+            CreatorType = creator.CreatorType and tostring(creator.CreatorType) or nil,
+            CreatorId = creator.CreatorTargetId,
             JobId = game.JobId,
-            ServerType = RobloxReplicatedStorage.GetServerType:InvokeServer()
+            ServerType = serverType,
+            Executor = context.Compatibility.Info,
         }
 
         -- The marketplace description can be multi-kB of marketing text that is

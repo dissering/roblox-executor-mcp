@@ -1,4 +1,5 @@
 return function(dependencies)
+local request = dependencies.Request or request
 local ScriptMappingPipeline = dependencies.ScriptMappingPipeline
 local HttpService = dependencies.HttpService
 local BridgeURL = dependencies.BridgeURL

@@ -28,8 +28,8 @@ export default function register(server: McpServer): void {
 
       return sendFireAndForget({
         type: "execute",
-        data: { source: `setthreadidentity(${threadContext})\n${code}` },
-        successMessage: `File executed: ${filePath} (thread context ${threadContext})`,
+        data: { source: code, threadContext },
+        successMessage: `File scheduled: ${filePath} (requested thread context ${threadContext}; uses existing permissions if unsupported).`,
       });
     }
   );

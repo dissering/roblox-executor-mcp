@@ -9,7 +9,7 @@ export default function register(server: McpServer): void {
     {
       title: "Get information about the current Roblox game",
       description:
-        "Get current Roblox place and universe metadata such as PlaceId, GameId, and PlaceVersion.",
+        "Get current Roblox place/universe metadata and executor capability availability. Function availability is not a guarantee of sUNC compliance or elevated permissions.",
       inputSchema: z.object({
         includeDescription: z
           .boolean()

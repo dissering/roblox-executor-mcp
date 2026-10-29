@@ -1,6 +1,7 @@
-return function(_context, Bridge)
+return function(context, Bridge)
+local Environment = context.Environment
     Bridge:BindToType("ensure-remote-spy", function(data)
-        if getgenv().Cobalt then
+        if Environment.Cobalt then
             return {
                 status = "already_loaded",
                 message = "Cobalt remote spy is already running."
@@ -8,6 +9,7 @@ return function(_context, Bridge)
         end
 
         -- Load Cobalt
+        context.Compatibility.RequireRemoteSpySupport()
         local success, err = pcall(function()
             loadstring(game:HttpGet("https://github.com/notpoiu/cobalt/releases/latest/download/Cobalt.luau"))()
         end)
@@ -18,11 +20,11 @@ return function(_context, Bridge)
 
         -- Wait for Cobalt to initialize
         local waitStart = os.clock()
-        while not getgenv().Cobalt and os.clock() - waitStart < 10 do
+        while not Environment.Cobalt and os.clock() - waitStart < 10 do
             task.wait(0.1)
         end
 
-        assert(getgenv().Cobalt, "Cobalt loaded but failed to initialize within 10 seconds.")
+        assert(Environment.Cobalt, "Cobalt loaded but failed to initialize within 10 seconds.")
         
         return {
             status = "loaded",
@@ -31,7 +33,7 @@ return function(_context, Bridge)
     end)
 
     Bridge:BindToType("get-remote-spy-logs", function(data)
-        local Cobalt = getgenv().Cobalt
+        local Cobalt = Environment.Cobalt
         assert(Cobalt and Cobalt.shared and Cobalt.shared.Logs, "Cobalt remote spy is not loaded. Call ensure-remote-spy first.")
 
         local direction = data.direction or "Both"

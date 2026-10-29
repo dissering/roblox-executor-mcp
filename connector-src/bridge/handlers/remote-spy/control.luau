@@ -1,6 +1,7 @@
-return function(_context, Bridge)
+return function(context, Bridge)
+local Environment = context.Environment
     Bridge:BindToType("clear-remote-spy-logs", function(data)
-        local Cobalt = getgenv().Cobalt
+        local Cobalt = Environment.Cobalt
         assert(Cobalt and Cobalt.shared and Cobalt.shared.ClearLogs, "Cobalt remote spy is not loaded. Call ensure-remote-spy first.")
 
         Cobalt.shared.ClearLogs()
@@ -12,7 +13,7 @@ return function(_context, Bridge)
     end)
 
     Bridge:BindToType("block-remote", function(data)
-        local Cobalt = getgenv().Cobalt
+        local Cobalt = Environment.Cobalt
         assert(Cobalt and Cobalt.shared and Cobalt.shared.Logs, "Cobalt remote spy is not loaded. Call ensure-remote-spy first.")
 
         local remoteName = data.remoteName
@@ -47,7 +48,7 @@ return function(_context, Bridge)
     end)
 
     Bridge:BindToType("ignore-remote", function(data)
-        local Cobalt = getgenv().Cobalt
+        local Cobalt = Environment.Cobalt
         assert(Cobalt and Cobalt.shared and Cobalt.shared.Logs, "Cobalt remote spy is not loaded. Call ensure-remote-spy first.")
 
         local remoteName = data.remoteName
@@ -89,7 +90,7 @@ return function(_context, Bridge)
 
         local operation = data.operation
         if operation == "status" then
-            local Cobalt = getgenv().Cobalt
+            local Cobalt = Environment.Cobalt
             local function CountLogs(logTable)
                 local count = 0
                 if typeof(logTable) ~= "table" then return count end

@@ -21,6 +21,7 @@ local VirtualInputManager = context.VirtualInputManager
         task.wait(0.05)
         
         if useKeyPress then
+            assert(VirtualInputManager or type(keypress) == "function", "This executor cannot simulate text input; use useKeyPress=false to set Text directly.")
             local success = pcall(function()
                 for i = 1, #text do
                     VirtualInputManager:SendTextInput(text:sub(i, i), nil, game)
@@ -85,17 +86,40 @@ local VirtualInputManager = context.VirtualInputManager
 
         assert(typeof(button) == "Instance", "Path did not resolve to a valid Instance.")
         assert(button:IsA("GuiButton"), "Resolved Instance is not a GuiButton (e.g., TextButton or ImageButton).")
-        assert(typeof(firesignal) == "function", "Your executor does not support 'firesignal', which is required for this command.")
 
         local Signals = {"Activated", "MouseButton1Down", "MouseButton2Down", "MouseButton1Click", "MouseButton2Click"}
         
+        if action then assert(table.find(Signals, action), "Invalid action provided. Valid actions are: " .. table.concat(Signals, ", ")) end
+        if typeof(firesignal) ~= "function" then
+            assert(VirtualInputManager, "This executor supports neither firesignal nor VirtualInputManager; button clicking is unavailable.")
+            assert(action == nil or action == "Activated" or action == "MouseButton1Click" or action == "MouseButton2Click", "Exact down-only signals require firesignal; select a click action for virtual mouse input.")
+            assert(button.Visible and button.AbsoluteSize.X > 0 and button.AbsoluteSize.Y > 0, "Virtual mouse clicking needs a visible button with a nonzero size.")
+            local center = button.AbsolutePosition + button.AbsoluteSize / 2
+            -- AbsolutePosition uses CoreUISafeInsets coordinates; virtual mouse input uses screen coordinates.
+            local guiService = context.GuiService or game:GetService("GuiService")
+            local inset = guiService:GetGuiInset()
+            local x, y = center.X + inset.X, center.Y + inset.Y
+            local mouseButton = action == "MouseButton2Click" and 1 or 0
+            VirtualInputManager:SendMouseMoveEvent(x, y, game)
+            task.wait()
+            VirtualInputManager:SendMouseButtonEvent(x, y, mouseButton, true, game, 0)
+            task.wait(0.05)
+            local released, releaseError = pcall(function()
+                VirtualInputManager:SendMouseButtonEvent(x, y, mouseButton, false, game, 0)
+            end)
+            assert(released, "Virtual mouse release failed: " .. tostring(releaseError))
+            return { status = "success", method = "virtual-input", message = "Sent a mouse click; the button must be unobstructed and on screen." }
+        end
+
         if action then
-            assert(table.find(Signals, action), "Invalid action provided. Valid actions are: " .. table.concat(Signals, ", "))
             firesignal(button[action])
         else
+            local fired = 0
             for _, signalName in pairs(Signals) do
-                pcall(function() firesignal(button[signalName]) end)
+                local ok = pcall(function() firesignal(button[signalName]) end)
+                if ok then fired += 1 end
             end
+            assert(fired > 0, "The executor's firesignal function failed for every button signal.")
         end
 
         return {

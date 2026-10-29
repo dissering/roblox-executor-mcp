@@ -1,10 +1,13 @@
 return function(context, Bridge)
 local LogService = context.LogService
+local Compatibility = context.Compatibility
 
     Bridge:BindToType("execute", function(data)
         task.defer(function()
-            setthreadidentity(8)
-            loadstring(data.source)()
+            Compatibility.SetThreadIdentity(data.threadContext or 8)
+            local chunk, compileError = loadstring(data.source)
+            assert(chunk, compileError)
+            chunk()
         end)
     end)
 
@@ -83,8 +86,10 @@ local LogService = context.LogService
     end)
 
     Bridge:BindToType("get-data-by-code", function(data)
-        setthreadidentity(8)
-        local dataOutput = table.pack(loadstring(data.source)())
+        Compatibility.SetThreadIdentity(data.threadContext or 8)
+        local chunk, compileError = loadstring(data.source)
+        assert(chunk, compileError)
+        local dataOutput = table.pack(chunk())
 
         return dataOutput
     end)

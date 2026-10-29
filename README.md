@@ -37,6 +37,21 @@ Use it to see connected Roblox clients, inspect scripts, run tools, view server 
 - **Bun** ≥ 1.3 for the interactive OpenTUI harness installer
 - **A Roblox executor** that supports `loadstring`, `request`, and (preferably) `WebSocket`
 
+## Executor compatibility
+
+The connector detects features instead of requiring a particular executor name or UNC percentage. `get-game-info` reports the executor name/version, environment source and available functions. Availability is not a claim that a function passes sUNC or grants additional permissions.
+
+- Required: `loadstring`, HTTP access through `request`, `http_request`, `syn.request` or `http.request`, and basic Roblox instance/service access.
+- Missing or failing `getgenv` falls back to `_G` or the script environment. `cloneref` is optional, and a broken `getnilinstances` does not stop ordinary script scanning. Detached scripts cannot be discovered without working enumeration.
+- Missing or failing identity setters leave the executor's current permissions in place. This keeps basic execution working; restricted APIs may still fail. Both MCP and dashboard execution use the same connector-side handling.
+- WebSocket aliases are supported, with HTTP polling as the fallback. The loader can also download through an HTTP request alias when `game:HttpGet` fails.
+- Without `firesignal`, button clicks use VirtualInputManager when permitted. This converts GUI positions to screen coordinates using [Roblox's GUI inset](https://create.roblox.com/docs/reference/engine/classes/GuiBase2d#AbsolutePosition), then sends mouse input to a visible, unobstructed button; down-only signal actions still require `firesignal`. An unavailable input service disables that feature rather than the whole connector.
+- Cobalt remote spying requires native hooking APIs. Missing prerequisites return a specific error before loading Cobalt; the bridge does not invent replacements for unsupported hooks.
+
+Update both the server and the connector (rerun the loader in a fresh Roblox client) to use connector-side identity handling.
+
+These paths are tested with missing and throwing APIs, including the limitations in the supplied Xeno v1.3.30 sUNC report. Live compatibility probes ran on Xeno v1.3.65, including an observed click on a temporary test button without `firesignal`. Failed sUNC tests can still expose callable functions, so operations are protected at runtime rather than classified by score alone.
+
 ## Quick Start
 
 ### 1. Clone the server
@@ -103,15 +118,41 @@ If you prefer to configure a client yourself, use the setup guide for your clien
 The installer prints this for you. Put it in your executor or Auto Execute:
 
 ```lua
-while not getgenv().MCP_Loaded do
-    local bridgeUrl = getgenv().BridgeURL or "localhost:16384"
-    pcall(function() loadstring(game:HttpGet("http://" .. bridgeUrl .. "/script.luau"))() end)
-
-    task.wait(0.15)
+local environment = _G
+if type(getgenv) == "function" then
+    local ok, value = pcall(getgenv)
+    if ok and type(value) == "table" then environment = value end
+end
+if type(environment) ~= "table" then environment = getfenv(0) end
+local lastError
+while not environment.MCP_Loaded do
+    local bridgeUrl = environment.BridgeURL or environment.bridgeurl or "localhost:16384"
+    local ok, failure = pcall(function()
+        local downloaded, source = pcall(function() return game:HttpGet("http://" .. bridgeUrl .. "/script.luau") end)
+        if not downloaded or type(source) ~= "string" then
+            local send
+            for _, candidate in {request, http_request, type(syn) == "table" and syn.request, type(http) == "table" and http.request} do
+                if type(candidate) == "function" then send = candidate; break end
+            end
+            assert(send, "Executor has neither a working HttpGet nor an HTTP request function.")
+            local response = send({Url = "http://" .. bridgeUrl .. "/script.luau", Method = "GET"})
+            assert(type(response) == "table" and tonumber(response.StatusCode or response.Status or response.status_code or response.status) == 200, "Connector download failed.")
+            source = response.Body or response.body
+        end
+        assert(type(loadstring) == "function", "Executor needs loadstring to load MCP.")
+        local chunk, compileError = loadstring(source)
+        assert(chunk, compileError)
+        chunk()
+    end)
+    if not ok and tostring(failure) ~= lastError then
+        lastError = tostring(failure)
+        warn("MCP connector: " .. lastError)
+    end
+    task.wait(1)
 end
 ```
 
-**Optional settings** (set before the `loadstring`):
+**Optional settings** (set before running the loader; use `_G` instead of `getgenv()` when `getgenv` is unavailable):
 
 ```lua
 getgenv().BridgeURL = "10.0.0.4:16384"                  -- default: localhost:16384

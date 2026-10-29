@@ -13,7 +13,7 @@ local QueueMappedScriptSource = context.QueueMappedScriptSource
             scriptInstance = GetScriptByDebugId(data.debugId)
             assert(scriptInstance, "No live script instance found for ScriptProxy with DebugId: " .. tostring(data.debugId))
         else
-            setthreadidentity(8)
+            context.Compatibility.SetThreadIdentity(8)
             scriptInstance = loadstring(data.source)()
 
             assert(typeof(scriptInstance) == "Instance", "Script instance is not an instance.")
