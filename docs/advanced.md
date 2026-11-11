@@ -53,12 +53,14 @@ Set these in Roblox **before** running the connector:
 |---|---|---|
 | `getgenv().BridgeURL` | `localhost:16384` | Server address to connect to |
 | `getgenv().DisableWebSocket` | `false` | Force HTTP polling instead of WebSocket |
-| `getgenv().DisableInitialScriptDecompMapping` | `false` | Skip decompiling all scripts on connect |
+| `getgenv().EnableScriptMapping` | `false` | Index (decompile) every script on connect. When off, `script-grep` and `semantic-search-scripts` start indexing on first use |
 | `getgenv().MCP_FailedScriptResyncInterval` | `30` | Seconds before the first failed-script resync; repeated failures back off to five minutes |
 | `getgenv().MCP_FailedScriptResyncBatchSize` | `8` | Maximum failed scripts queued by one periodic resync tick (1 to 32) |
-| `getgenv().MCP_ScriptMappingWorkers` | `24` | Concurrent decompile workers during script mapping (1 to 64) |
+| `getgenv().MCP_ScriptMappingWorkers` | `6` | Concurrent decompile workers during script mapping (1 to 64) |
 
-Use `_G` in place of `getgenv()` on executors without a working `getgenv`. `MCP_FailedScriptResyncInterval` is clamped to 5 to 600 seconds.
+Settings can also be passed to the connector chunk as a table, which is what `mcp.lua` does: `loadstring(source)({ BridgeURL = "localhost:16384" })`. Use `_G` in place of `getgenv()` on executors without a working `getgenv`.
+
+While indexing, workers pause when every decompiler is cooling down or rate limited, so those scripts are retried without being marked failed. After the first 3 failures, failures are reported as one summary line every 15 seconds. `MCP_FailedScriptResyncInterval` is clamped to 5 to 600 seconds.
 
 Failed script mappings are retried automatically in bounded batches. A resync prioritizes the provider that the original attempt actually reached, then uses the configured provider order as fallback.
 

@@ -38,7 +38,7 @@ do
         if ok and type(source) == "table" then table.insert(sources, source) end
     end
     for _, name in {
-        "BridgeURL", "bridgeurl", "DisableWebSocket", "DisableInitialScriptDecompMapping",
+        "BridgeURL", "bridgeurl", "DisableWebSocket", "EnableScriptMapping",
         "MCP_ScriptMappingWorkers", "MCP_FailedScriptResyncInterval", "MCP_FailedScriptResyncBatchSize",
     } do
         for _, source in sources do
@@ -258,7 +258,7 @@ local PreparedScript = require("./decompiler/prepared-script")
 local ScriptMappingPipeline = ScriptMappingState.new()
 local ScriptMappingWorkerCount = math.max(
     1,
-    math.min(math.floor(tonumber(Environment.MCP_ScriptMappingWorkers) or 24), 64)
+    math.min(math.floor(tonumber(Environment.MCP_ScriptMappingWorkers) or 6), 64)
 )
 local MappingConcurrency = require("./mapping/concurrency").new(
     ScriptMappingPipeline,

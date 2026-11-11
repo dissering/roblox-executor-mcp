@@ -57,6 +57,7 @@ local function UploadScriptSourceBatch(clientId, items)
             scripts = scripts,
             removedScriptIds = removedScriptIds,
             hasFinishedMapping = projectedFinished,
+            mappingDisabled = ScriptMappingPipeline.disabled == true,
             sourcesToMap = ScriptMappingPipeline.total,
             processedSources = projectedProcessedSources,
             skippedSources = ScriptMappingPipeline.skipped,

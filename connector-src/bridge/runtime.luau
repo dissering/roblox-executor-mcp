@@ -49,7 +49,9 @@ while IsCurrentConnector() do
             ResetScriptMappingState(clientId)
         end
 
-        if not Environment.DisableInitialScriptDecompMapping then
+        -- Mapping decompiles every script in the background. It is heavy enough to crash
+        -- some clients, so it only runs when explicitly enabled.
+        if Environment.EnableScriptMapping == true or Environment.MCP_ScriptMappingStarted == true then
             StartScriptMapping(clientId)
             StartFailedScriptResync()
             ResumeDeferredScriptMappings()

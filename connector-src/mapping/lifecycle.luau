@@ -82,6 +82,23 @@ local function DeferScriptMappingUntilTransport(script, prepared, generation, kn
     job.prepared = prepared
 end
 
+-- When every decompiler was skipped for a cooldown or rate limit, nothing was attempted.
+-- Returns the seconds until the first provider is available again, or nil when any
+-- provider was really tried (or the error is something else).
+local function ProviderCooldownSeconds(errorMessage)
+    local shortest
+    for line in string.gmatch(tostring(errorMessage or ""), "[^\n]+") do
+        line = string.match(line, "^%s*(.-)%s*$")
+        if line ~= "" then
+            local seconds = string.match(line, "skipped: cooling down for (%d+)s")
+                or string.match(line, "skipped: rate limited for (%d+)s")
+            if not seconds then return nil end
+            shortest = math.min(shortest or math.huge, tonumber(seconds))
+        end
+    end
+    return shortest
+end
+
 local function RetryScriptMapping(script, prepared, generation, errorMessage, knownDebugId)
     local debugId = knownDebugId or script:GetDebugId()
     local job = ScriptMappingPipeline.jobs[debugId]
@@ -91,16 +108,27 @@ local function RetryScriptMapping(script, prepared, generation, errorMessage, kn
         Concurrency:Reduce()
     end
 
-    job.mappingAttempts = (job.mappingAttempts or 0) + 1
-    if job.mappingAttempts >= MappingMaxAttempts then
-        JobStatus:MarkFailed(debugId, errorMessage or "Failed to prepare or decompile script source.")
-        return
+    local cooldown = ProviderCooldownSeconds(errorMessage)
+    local retryDelay
+    if cooldown then
+        -- Pause every worker until a provider is back, and do not spend a retry on it.
+        ScriptMappingPipeline.decompileCooldownUntil = math.max(
+            ScriptMappingPipeline.decompileCooldownUntil or 0,
+            os.clock() + cooldown
+        )
+        retryDelay = cooldown + math.random() * 2
+    else
+        job.mappingAttempts = (job.mappingAttempts or 0) + 1
+        if job.mappingAttempts >= MappingMaxAttempts then
+            JobStatus:MarkFailed(debugId, errorMessage or "Failed to prepare or decompile script source.")
+            return
+        end
+        retryDelay = math.min(2 ^ math.max(0, job.mappingAttempts - 1), MappingRetryMaxSeconds)
     end
 
     ScriptMappingPipeline:SetJobState(job, "queued")
     AttachScriptToMappingJob(job, script)
     job.prepared = prepared
-    local retryDelay = math.min(2 ^ math.max(0, job.mappingAttempts - 1), MappingRetryMaxSeconds)
     task.delay(retryDelay, function()
         if generation ~= ScriptMappingPipeline.generation or job.generation ~= generation then return end
         if job.state ~= "queued" then return end
@@ -179,6 +207,11 @@ local function MapScriptSource(script, prepared, generation, knownDebugId)
         end
     end
     job.prepared = prepared
+    local cooldownLeft = (ScriptMappingPipeline.decompileCooldownUntil or 0) - os.clock()
+    if cooldownLeft > 0 then
+        task.wait(cooldownLeft)
+        if generation ~= ScriptMappingPipeline.generation or ScriptMappingPipeline.jobs[debugId] ~= job then return end
+    end
     local source, errorMessage, scriptHash, usedPrepared = DecompileScriptSource(
         script,
         prepared,
