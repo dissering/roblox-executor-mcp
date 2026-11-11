@@ -5,6 +5,16 @@ import { maxOutputCharsSchema } from "../../schemas.js";
 
 // A flat object (not a discriminated union) so MCP clients receive a real JSON Schema
 // with every parameter. Operation-specific requirements are checked in the handler.
+// Clients holding a stale tool listing send numbers and booleans as strings.
+const looseNumber = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() !== "" && !Number.isNaN(Number(value)) ? Number(value) : value),
+  z.number()
+);
+const looseBoolean = z.preprocess(
+  (value) => (value === "true" ? true : value === "false" ? false : value),
+  z.boolean()
+);
+
 const inputSchema = z.object({
   operation: z
     .enum(["status", "list", "clear", "block", "unblock", "ignore", "unignore", "configure"])
@@ -17,26 +27,22 @@ const inputSchema = z.object({
     .describe("list: direction to show (default Both). block/ignore: Incoming or Outgoing (required)")
     .optional(),
   nameFilter: z.string().describe("list: case-insensitive substring filter on remote names").optional(),
-  limit: z.number().describe("list: maximum remotes to return (default 5, max 100)").optional(),
-  maxCallsPerRemote: z
-    .number()
+  limit: looseNumber.describe("list: maximum remotes to return (default 5, max 100)").optional(),
+  maxCallsPerRemote: looseNumber
     .describe("list: recent calls per remote when summaryOnly is false (default 1, max 20)")
     .optional(),
-  summaryOnly: z
-    .boolean()
+  summaryOnly: looseBoolean
     .describe("list: names, state and counts only, without arguments (default true)")
     .optional(),
   remoteName: z
     .string()
     .describe("block/unblock/ignore/unignore: exact remote name. Applies before the remote first fires")
     .optional(),
-  enabled: z.boolean().describe("configure: pause (false) or resume (true) the spy").optional(),
-  includeBindables: z
-    .boolean()
+  enabled: looseBoolean.describe("configure: pause (false) or resume (true) the spy").optional(),
+  includeBindables: looseBoolean
     .describe("configure: also log BindableEvent:Fire and BindableFunction:Invoke (default false)")
     .optional(),
-  includeExecutorCalls: z
-    .boolean()
+  includeExecutorCalls: looseBoolean
     .describe("configure: also log and block calls from executor scripts, including replays (default false)")
     .optional(),
   maxOutputChars: maxOutputCharsSchema,
