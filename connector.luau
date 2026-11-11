@@ -67,6 +67,20 @@ Headers=o.Headers or o.headers or{},
 }
 end
 
+
+function m.HttpGet(n)
+local o,p=pcall(function()
+return game:HttpGet(n)
+end)
+if o and type(p)=="string"then
+return p
+end
+local q=m.Request{Url=n,Method="GET"}
+assert(q.StatusCode==200 and type(q.Body)=="string",
+"HTTP GET "..n.." failed with status "..tostring(q.StatusCode))
+return q.Body
+end
+
 function m.SetThreadIdentity(n)
 if not g then return false end
 local o=pcall(g,n or 8)
@@ -2713,7 +2727,7 @@ end
 
 b.Compatibility.RequireRemoteSpySupport()
 local f,g=pcall(function()
-loadstring(game:HttpGet"https://github.com/notpoiu/cobalt/releases/latest/download/Cobalt.luau")()
+loadstring(b.Compatibility.HttpGet"https://github.com/notpoiu/cobalt/releases/latest/download/Cobalt.luau")()
 end)
 
 if not f then
