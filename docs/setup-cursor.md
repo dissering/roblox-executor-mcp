@@ -1,42 +1,45 @@
 # Cursor Setup
 
-## Option 1: Deeplink (Quick)
+The harness installer configures Cursor for you (`npm run install:harnesses`, then select **Cursor**). Use the options below to set it up by hand.
 
-Click the button below to auto-install (you'll need to update the path afterwards):
+Before any manual option, build the server once from the repo root:
 
-[![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en-US/install-mcp?name=roblox-executor-mcp&config=eyJjb21tYW5kIjoibm9kZSAvcGF0aC90by9NQ1BTZXJ2ZXIvZGlzdC9pbmRleC5qcyJ9)
+```bash
+npm install
+npm run build
+```
 
-## Option 2: Manual
+## Option 1: Deeplink
 
-1. Open Cursor
-2. Go to **Settings** > **Features** > **MCP**
-3. Click **Add New MCP Server**
-4. Fill in:
-   - **Name:** `roblox-executor-mcp`
-   - **Type:** `command`
-   - **Command:** `node /path/to/roblox-executor-mcp/dist/index.js`
+Click the button, then edit the path in Cursor's MCP settings to point at your checkout:
 
-Replace `/path/to/roblox-executor-mcp` with the actual path where you cloned the repo.
+[![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en-US/install-mcp?name=roblox-mcp&config=eyJjb21tYW5kIjoibm9kZSIsImFyZ3MiOlsiL3BhdGgvdG8vcm9ibG94LWV4ZWN1dG9yLW1jcC9kaXN0L2luZGV4LmpzIiwiLS1zZXJ2ZXItbmFtZSIsInJvYmxveC1tY3AiXX0=)
 
-## Option 3: JSON Config
+## Option 2: JSON config
 
-Add this to your Cursor MCP config file (`.cursor/mcp.json` in your project or global config):
+Add this to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` in a project:
 
 ```json
 {
   "mcpServers": {
-    "roblox-executor-mcp": {
+    "roblox-mcp": {
       "command": "node",
-      "args": ["/path/to/roblox-executor-mcp/dist/index.js"]
+      "args": [
+        "/path/to/roblox-executor-mcp/dist/index.js",
+        "--server-name",
+        "roblox-mcp"
+      ]
     }
   }
 }
 ```
 
+Replace `/path/to/roblox-executor-mcp` with the absolute path where you cloned the repo. On Windows, use forward slashes or escaped backslashes, for example `C:/Users/you/roblox-executor-mcp/dist/index.js`.
+
 ## Verify
 
-After setup, you should see `roblox-executor-mcp` listed in your MCP servers with a green status indicator. If it shows red, check that:
+Open **Cursor Settings → MCP**. `roblox-mcp` should show a green status. If it shows red:
 
-- You ran `pnpm install && pnpm run build` first
-- The path to `dist/index.js` is correct
-- Node.js ≥ 18 is installed
+- Confirm `dist/index.js` exists (run `npm run build`)
+- Check the path in the config
+- Confirm Node.js 18 or newer is installed (`node -v`)

@@ -1,8 +1,10 @@
-import type { WebSocket } from "ws";
+import crypto from "crypto";
+import { WebSocket } from "ws";
 import {
+  GetResponseOfIdFromClient,
+  httpResponseResolvers,
   relayClients,
   relayRequestOrigin,
-  requestToClientId,
   SendToClient,
 } from "../../bridge/handlers/shared/communication.js";
 import {
@@ -16,6 +18,20 @@ interface RelayMessage {
   type?: string;
   targetClientId?: string;
   [key: string]: unknown;
+}
+
+const RELAY_RESPONSE_TIMEOUT_MS = 120_000;
+
+function sendIfOpen(ws: WebSocket, payload: unknown): void {
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
+}
+
+function failPendingRequestsFrom(ws: WebSocket, reason: string): void {
+  for (const [transportId, origin] of [...relayRequestOrigin]) {
+    if (origin !== ws) continue;
+    relayRequestOrigin.delete(transportId);
+    httpResponseResolvers.get(transportId)?.({ id: transportId, output: undefined, error: reason });
+  }
 }
 
 export function WS(ws: WebSocket): void {
@@ -65,10 +81,6 @@ export function WS(ws: WebSocket): void {
         return;
       }
 
-      if (message.id) {
-        relayRequestOrigin.set(message.id, ws);
-      }
-
       const targetClientId = message.targetClientId;
       if (targetClientId) {
         delete message.targetClientId;
@@ -76,10 +88,23 @@ export function WS(ws: WebSocket): void {
 
       const target = resolveTargetClient(targetClientId);
       if (target) {
-        if (message.id) requestToClientId.set(message.id, target.clientId);
-        SendToClient(target, JSON.stringify(message));
+        const originalId = message.id;
+        if (!originalId) {
+          SendToClient(target, JSON.stringify(message));
+          return;
+        }
+
+        // Relay clients pick their own IDs, so two of them can collide with each
+        // other or with a local primary request. Route under a fresh transport ID
+        // and restore the original ID on the way back.
+        const transportId = `relay:${crypto.randomUUID()}`;
+        relayRequestOrigin.set(transportId, ws);
+        void GetResponseOfIdFromClient(transportId, RELAY_RESPONSE_TIMEOUT_MS).then((response) => {
+          relayRequestOrigin.delete(transportId);
+          sendIfOpen(ws, { ...response, id: originalId });
+        });
+        SendToClient(target, JSON.stringify({ ...message, id: transportId }));
       } else if (message.id) {
-        relayRequestOrigin.delete(message.id);
         ws.send(
           JSON.stringify({
             id: message.id,
@@ -96,13 +121,12 @@ export function WS(ws: WebSocket): void {
   ws.on("close", () => {
     relayClients.delete(ws);
     console.error(`[Primary] Relay client disconnected. Total: ${relayClients.size}`);
-    for (const [id, origin] of relayRequestOrigin.entries()) {
-      if (origin === ws) relayRequestOrigin.delete(id);
-    }
+    failPendingRequestsFrom(ws, "Relay client disconnected.");
   });
 
   ws.on("error", (err) => {
     console.error("[Primary] Relay client error:", err.message);
     relayClients.delete(ws);
+    failPendingRequestsFrom(ws, `Relay client error: ${err.message}`);
   });
 }

@@ -1,6 +1,10 @@
 # BLACKBOX AI Setup
 
-BLACKBOX AI supports MCP servers through its VS Code extension, but it does not document a supported local configuration file that this installer can safely edit. The harness installer therefore builds the server and prints a ready-to-paste stdio recipe for BLACKBOX AI.
+BLACKBOX AI supports MCP servers through its VS Code extension, which stores them in its extension settings file:
+
+- **Windows:** `%APPDATA%\Code\User\globalStorage\blackboxapp.blackboxagent\settings\blackbox_mcp_settings.json`
+- **macOS:** `~/Library/Application Support/Code/User/globalStorage/blackboxapp.blackboxagent/settings/blackbox_mcp_settings.json`
+- **Linux:** `~/.config/Code/User/globalStorage/blackboxapp.blackboxagent/settings/blackbox_mcp_settings.json`
 
 ## Installer
 
@@ -10,20 +14,18 @@ Run the installer, reveal all harnesses if BLACKBOX AI was not detected automati
 npm run install:harnesses -- --show-all-harnesses
 ```
 
-The installer prints a recipe containing the absolute path to this checkout's built `dist/index.js`.
+The installer merges the server into the file above, keeps your other MCP servers, and writes a `.bak` copy before changing an existing file.
 
-## Add the server in BLACKBOX AI
+## Manual setup
 
-1. Open the BLACKBOX AI panel in VS Code.
-2. Open **MCP Servers** from the controls/settings menu.
-3. Add a custom `stdio` server.
-4. Paste the recipe printed by the installer. If the UI asks for separate fields, use:
-   - Name: `roblox-mcp`
-   - Command: `node`
-   - Arguments: the three values from the printed `args` array, in order
-5. Reload the VS Code window, then confirm `roblox-mcp` appears in the installed MCP server list.
+Build the server once from the repo root:
 
-The recipe has this shape; use the absolute path printed on your machine:
+```bash
+npm install
+npm run build
+```
+
+Then either open **MCP Servers** from the BLACKBOX AI panel and add a custom `stdio` server, or merge this into the settings file:
 
 ```json
 {
@@ -40,8 +42,10 @@ The recipe has this shape; use the absolute path printed on your machine:
 }
 ```
 
-BLACKBOX AI's current MCP surface is documented in its [Visual Studio Marketplace listing](https://marketplace.visualstudio.com/items?itemName=Blackboxapp.blackbox).
+If the UI asks for separate fields, use name `roblox-mcp`, command `node`, and the three `args` values in order.
 
-## Connect Roblox
+## Verify
 
-After BLACKBOX AI shows the MCP server as connected, run the loader printed by the installer in your executor. Keep the MCP server process and Roblox client on the same bridge URL.
+Reload the VS Code window and confirm `roblox-mcp` appears as connected in the BLACKBOX AI MCP server list. Then run the loader printed by the installer in your executor. The MCP server and the Roblox client must use the same bridge URL.
+
+BLACKBOX AI's MCP features are described in its [Visual Studio Marketplace listing](https://marketplace.visualstudio.com/items?itemName=Blackboxapp.blackbox).

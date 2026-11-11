@@ -31,6 +31,50 @@ local BaseBridge = {}; do
         end
     end
 
+    function BaseBridge:TrackThread(callback)
+        local thread
+        thread = task.spawn(function()
+            callback()
+            if thread and self.CommandThreads then
+                self.CommandThreads[thread] = nil
+            end
+        end)
+        -- task.spawn resumes immediately, so a command that never yields is already dead here.
+        if self.CommandThreads and coroutine.status(thread) ~= "dead" then
+            self.CommandThreads[thread] = true
+        end
+        return thread
+    end
+
+    function BaseBridge:Destroy()
+        self.Connected = false
+        local current = coroutine.running()
+        for _, field in { "AliveThread", "PollThread", "ProbeThread" } do
+            local thread = self[field]
+            self[field] = nil
+            if thread and thread ~= current then pcall(task.cancel, thread) end
+        end
+        if self.CommandThreads then
+            local threads = self.CommandThreads
+            self.CommandThreads = {}
+            for thread in threads do
+                if thread ~= current then pcall(task.cancel, thread) end
+            end
+        end
+        for _, field in { "MessageConnection", "CloseConnection" } do
+            local connection = self[field]
+            self[field] = nil
+            if connection then pcall(function() connection:Disconnect() end) end
+        end
+        if self.WebSocket then
+            local socket = self.WebSocket
+            self.WebSocket = nil
+            pcall(function() socket:Close() end)
+        end
+        if self.Callbacks then table.clear(self.Callbacks) end
+        if self.RawCallbacks then table.clear(self.RawCallbacks) end
+    end
+
     function BaseBridge:HandleMessage(data)
         if self.Callbacks[data.type] then
             local success, result = pcall(function()
@@ -94,9 +138,11 @@ local BaseBridge = {}; do
                     response = data
                 end
             end)
+            self.ProbeThread = thread
 
             local start = os.clock()
             repeat task.wait(0.05) until response ~= nil or os.clock() - start > 5
+            self.ProbeThread = nil
 
             if response == nil then
                 task.cancel(thread)
@@ -165,14 +211,12 @@ local WebSocketBridge = setmetatable({}, {__index = BaseBridge}); do
         self.Callbacks = {}
         self.ClientId = nil
 
-        --// Send registration \\--
-        self.WebSocket:Send(HttpService:JSONEncode(GetRegistrationInfo()))
-
         self.AliveThread = task.spawn(function()
             local consecutiveFailures = 0
-            while task.wait(1) do
+            while self.Connected do
+                task.wait(1)
                 if not self.Connected then
-                    continue
+                    break
                 end
 
                 if self:IsAlive() then
@@ -189,13 +233,17 @@ local WebSocketBridge = setmetatable({}, {__index = BaseBridge}); do
                 break
             end
     
-            pcall(function()
-                self.WebSocket:Close()
-            end)
+            local socket = self.WebSocket
+            if socket then
+                pcall(function()
+                    socket:Close()
+                end)
+            end
         end)
-    
+
         --// On Message \\--
-        self.WebSocket.OnMessage:Connect(function(message)
+        -- Listeners go in before registration so a fast "registered" reply is not dropped.
+        self.MessageConnection = self.WebSocket.OnMessage:Connect(function(message)
             local data = HttpService:JSONDecode(message)
 
             --// Handle registration response \\--
@@ -205,16 +253,26 @@ local WebSocketBridge = setmetatable({}, {__index = BaseBridge}); do
             end
 
             local response = self:HandleMessage(data)
-            if response then
-                self.WebSocket:Send(HttpService:JSONEncode(response))
+            local socket = self.WebSocket
+            if response and socket then
+                socket:Send(HttpService:JSONEncode(response))
             end
         end)
-    
+
         --// On Close \\--
-        self.WebSocket.OnClose:Connect(function()
+        self.CloseConnection = self.WebSocket.OnClose:Connect(function()
             self.Connected = false
         end)
-    
+
+        --// Send registration \\--
+        local registered, registrationError = pcall(function()
+            self.WebSocket:Send(HttpService:JSONEncode(GetRegistrationInfo()))
+        end)
+        if not registered then
+            self:Destroy()
+            error(registrationError)
+        end
+
         return self
     end
     
@@ -251,6 +309,7 @@ local HTTPBridge = setmetatable({}, {__index = BaseBridge}); do
         self.Callbacks = {}
         self.PollInterval = 0.1
         self.ClientId = nil
+        self.CommandThreads = {}
 
         --// Register with the server \\--
         pcall(function()
@@ -306,9 +365,9 @@ local HTTPBridge = setmetatable({}, {__index = BaseBridge}); do
 
                         for _, command in ipairs(commands) do
                             gotCommands = true
-                            task.spawn(function()
+                            self:TrackThread(function()
                                 local result = self:HandleMessage(command)
-                                if result == nil then return end
+                                if result == nil or not self.Connected then return end
 
                                 --// Send response back \\--
                                 request({
