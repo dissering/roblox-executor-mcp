@@ -55,3 +55,19 @@ test("a running index returns partial results without restarting mapping", (t) =
   assert.equal(result.index.scripts.length, 1);
   assert.equal(sent.length, 0, "mapping is not restarted while it runs");
 });
+
+test("relayed script-grep and semantic search start mapping too", async (t) => {
+  const { POST: apiTool } = await import("../dist/http/routes/api/tool.js");
+  const { Readable } = await import("node:stream");
+  const { sent, identity } = connect(t, "job-relay");
+  upsertScriptSources(identity, { mappingDisabled: true, hasFinishedMapping: true, sourcesToMap: 0 });
+
+  for (const type of ["script-grep", "semantic-search"]) {
+    sent.length = 0;
+    const request = Readable.from([Buffer.from(JSON.stringify({ type, query: "FireServer", clientId: identity.clientId }))]);
+    let body;
+    await apiTool(request, { writeHead() {}, end(text) { body = JSON.parse(text); } });
+    assert.match(body.error ?? "", /started now in the background/, `${type} reports that indexing started`);
+    assert.equal(sent.at(-1)?.type, "start-script-mapping", `${type} asks the client to start mapping`);
+  }
+});

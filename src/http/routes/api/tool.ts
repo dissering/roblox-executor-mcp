@@ -25,6 +25,7 @@ import {
 } from "../../../semantic/progress.js";
 import { readJsonBody } from "../../body.js";
 import { formatToolText } from "../../../tools/factory.js";
+import { startScriptMappingIfNeeded } from "../../../tools/impl/inspection/script-sources.js";
 
 
 interface ToolRequest {
@@ -144,8 +145,10 @@ export async function POST(req: IncomingMessage, res: ServerResponse): Promise<v
         jobId: target.jobId,
       });
 
-      if (!index.hasFinishedMapping) {
-        return jsonErr(res, `Still receiving script sources (${index.mappedSources}/${index.sourcesToMap}). Try again later.`);
+      const mappingMessage = startScriptMappingIfNeeded(target.clientId, index);
+      if (mappingMessage) return jsonErr(res, mappingMessage);
+      if (index.scripts.length === 0) {
+        return jsonErr(res, `No script sources have been received yet (${index.processedSources}/${index.sourcesToMap} processed). Indexing is running; try again shortly.`);
       }
 
       const literal = params.literal === true;
@@ -197,7 +200,8 @@ export async function POST(req: IncomingMessage, res: ServerResponse): Promise<v
         }
       }
 
-      const header = `${totalMatches} match(es) across ${results.length} script(s)${limited ? " (results limited)" : ""}`;
+      const partial = index.hasFinishedMapping ? "" : ` (partial index: ${index.mappedSources}/${index.sourcesToMap} scripts uploaded)`;
+      const header = `${totalMatches} match(es) across ${results.length} script(s)${limited ? " (results limited)" : ""}${partial}`;
       const body = results.map(r => `[${r.path}] ${r.matches.length} match(es)\n\n${r.matches.join("\n\n")}`).join("\n\n---\n\n");
 
       return jsonOk(res, {
@@ -222,8 +226,10 @@ export async function POST(req: IncomingMessage, res: ServerResponse): Promise<v
         jobId: target.jobId,
       });
 
+      const semanticMappingMessage = startScriptMappingIfNeeded(target.clientId, index);
+      if (semanticMappingMessage) return jsonErr(res, semanticMappingMessage);
       if (index.scripts.length === 0) {
-        return jsonErr(res, `No script sources have been received yet.`);
+        return jsonErr(res, `No script sources have been received yet (${index.processedSources}/${index.sourcesToMap} processed). Indexing is running; try again shortly.`);
       }
 
       const settings = await loadSemanticSettings();
