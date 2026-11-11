@@ -4,6 +4,7 @@
 local Compatibility = require("./compat").new()
 local Environment = Compatibility.Environment
 if Environment.MCP_Loaded == true then
+    print("[roblox-mcp] connector is already running in this session, skipping")
     return
 end
 

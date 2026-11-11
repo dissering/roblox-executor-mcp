@@ -136,6 +136,8 @@ local BaseBridge = {}; do
 
                 if success then
                     response = data
+                else
+                    self.LastProbeError = "request failed: " .. tostring(data)
                 end
             end)
             self.ProbeThread = thread
@@ -146,14 +148,17 @@ local BaseBridge = {}; do
 
             if response == nil then
                 task.cancel(thread)
+                self.LastProbeError = self.LastProbeError or ("no response from http://" .. BridgeURL .. " within 5 seconds")
                 return false
             end
     
             -- 426 = Upgrade Required (WebSocket), 200 = HTTP mode
             if response.StatusCode == 426 or response.StatusCode == 200 then
+                self.LastProbeError = nil
                 return true
             end
     
+            self.LastProbeError = "unexpected HTTP status " .. tostring(response.StatusCode) .. " from http://" .. BridgeURL .. " (is this the MCP server?)"
             return false
         end)
     
@@ -181,7 +186,7 @@ local WebSocketBridge = setmetatable({}, {__index = BaseBridge}); do
         while not self:IsAlive() do
             attempts += 1
             if attempts >= maxAttempts then
-                error("Failed to connect to bridge server after " .. maxAttempts .. " attempts")
+                error("Failed to reach the MCP server at " .. BridgeURL .. " after " .. maxAttempts .. " attempts: " .. tostring(self.LastProbeError or "unknown error"))
             end
             task.wait(retryDelay)
             retryDelay = math.min(retryDelay * 1.5, maxRetryDelay)
@@ -229,6 +234,7 @@ local WebSocketBridge = setmetatable({}, {__index = BaseBridge}); do
                     continue
                 end
                 
+                self.DisconnectReason = "3 heartbeat checks failed in a row: " .. tostring(self.LastProbeError or "unknown error")
                 self.Connected = false
                 break
             end
@@ -261,6 +267,7 @@ local WebSocketBridge = setmetatable({}, {__index = BaseBridge}); do
 
         --// On Close \\--
         self.CloseConnection = self.WebSocket.OnClose:Connect(function()
+            self.DisconnectReason = self.DisconnectReason or "the WebSocket was closed"
             self.Connected = false
         end)
 
@@ -299,7 +306,7 @@ local HTTPBridge = setmetatable({}, {__index = BaseBridge}); do
         while not self:IsAlive() do
             attempts += 1
             if attempts >= maxAttempts then
-                error("Failed to connect to bridge server after " .. maxAttempts .. " attempts")
+                error("Failed to reach the MCP server at " .. BridgeURL .. " after " .. maxAttempts .. " attempts: " .. tostring(self.LastProbeError or "unknown error"))
             end
             task.wait(retryDelay)
             retryDelay = math.min(retryDelay * 1.5, maxRetryDelay)
@@ -331,7 +338,7 @@ local HTTPBridge = setmetatable({}, {__index = BaseBridge}); do
             
             while self.Connected do
                 local gotCommands = false
-                local success, _ = pcall(function()
+                local success, pollError = pcall(function()
                     local pollUrl = "http://" .. BridgeURL .. "/poll"
                     if self.ClientId then
                         pollUrl = pollUrl .. "?clientId=" .. self.ClientId
@@ -345,6 +352,7 @@ local HTTPBridge = setmetatable({}, {__index = BaseBridge}); do
                     if response.StatusCode ~= 204 and response.StatusCode ~= 200 then
                         consecutiveFailures += 1
                         if consecutiveFailures >= 3 then
+                            self.DisconnectReason = "3 polls in a row returned HTTP " .. tostring(response.StatusCode)
                             self.Connected = false
                         end
 
@@ -386,6 +394,7 @@ local HTTPBridge = setmetatable({}, {__index = BaseBridge}); do
                 if not success then
                     consecutiveFailures += 1
                     if consecutiveFailures >= 3 then
+                        self.DisconnectReason = "3 polls in a row failed: " .. tostring(pollError)
                         self.Connected = false
                     end
                 end
