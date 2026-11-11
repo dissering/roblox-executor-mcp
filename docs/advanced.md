@@ -68,6 +68,24 @@ The connector supports two transport modes:
 
 When the connection drops, the connector tears down the old bridge (heartbeat, poll loop, in-flight commands, socket listeners) before reconnecting, so repeated reconnects do not pile up threads.
 
+## Remote Spy
+
+The connector has its own remote spy. It starts the first time `remote-spy` is called and stays installed for the Roblox session, including across bridge reconnects.
+
+| Capability | Executor APIs used | Without them |
+|---|---|---|
+| Outgoing `FireServer` / `InvokeServer` logging and blocking | `hookmetamethod` + `getnamecallmethod`, or `getrawmetatable` + `setreadonly` + `getnamecallmethod`, plus `hookfunction` for direct calls | Falls back to the next option. With none, outgoing calls are not captured |
+| Calling script, executor-call filtering | `getcallingscript`, `checkcaller` | Fields are left empty and executor calls are logged |
+| Incoming `OnClientEvent` logging | None | Always available |
+| Incoming blocking | `getconnections` | Events are logged but not blocked |
+
+Notes:
+
+- Block and ignore rules match exact remote names and apply to remotes that have not fired yet.
+- Executor calls, including replays, are never logged or blocked unless `includeExecutorCalls` is turned on with `operation=configure`.
+- Bindables are off by default. Turn them on with `includeBindables`.
+- Each remote keeps its last 50 calls. With `summaryOnly=false`, every call includes its arguments, calling script, and a `Replay` snippet you can run with `execute`.
+
 ## Dashboard
 
 A local dashboard is available at `http://localhost:16384/` while the server runs. It shows connected clients, server role and uptime, and lets you browse scripts, run tools, read server logs, set up harnesses, pick a theme, configure decompilers, and build the semantic search index.

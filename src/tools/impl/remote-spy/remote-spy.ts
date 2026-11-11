@@ -38,8 +38,22 @@ const inputSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("status") }),
   z.object({
     operation: z.enum(["block", "unblock", "ignore", "unignore"]),
-    remoteName: z.string().describe("Exact remote name; use operation=list to discover candidates first"),
-    direction: directionSchema.describe("Direction of the captured remote"),
+    remoteName: z
+      .string()
+      .describe("Exact remote name. Rules also apply to remotes that have not fired yet"),
+    direction: directionSchema.describe("Direction the rule applies to"),
+  }),
+  z.object({
+    operation: z.literal("configure"),
+    enabled: z.boolean().describe("Pause (false) or resume (true) logging and blocking").optional(),
+    includeBindables: z
+      .boolean()
+      .describe("Also log BindableEvent:Fire and BindableFunction:Invoke (default: false)")
+      .optional(),
+    includeExecutorCalls: z
+      .boolean()
+      .describe("Also log and block calls made by executor scripts, including replays (default: false)")
+      .optional(),
   }),
 ]);
 
@@ -47,9 +61,9 @@ export default function register(server: McpServer): void {
   server.registerTool(
     "remote-spy",
     {
-      title: "Inspect and control Cobalt remote spy",
+      title: "Inspect and control the remote spy",
       description:
-        "Inspect and control Cobalt remote-spy state. Cobalt loads automatically. Use operation=list before changing a remote. block/unblock prevents or permits matching calls; ignore/unignore only changes whether matching calls are logged. Remote names are exact for state changes; list.nameFilter is a case-insensitive substring filter. Start with summaryOnly=true and small limits, then request arguments only for a narrowed remote.",
+        "Built-in remote spy; it starts automatically on first use. Outgoing FireServer/InvokeServer calls are captured with the strongest hook the executor supports (namecall hook, raw metatable, or hookfunction). Incoming OnClientEvent traffic is logged on every executor, including ones without hooks. Call operation=status to see which modes are active. Use operation=list with summaryOnly=true and small limits first; with summaryOnly=false each recent call includes its arguments, calling script, and a Replay snippet you can pass to execute. block/unblock drops or allows matching calls (incoming blocking needs getconnections); ignore/unignore only stops logging. Rules match exact remote names and apply before a remote first fires. configure pauses the spy or includes bindables or executor calls.",
       inputSchema,
     },
     async (input) => {

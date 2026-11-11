@@ -1,132 +1,59 @@
+local RemoteSpy = require("../../../remote-spy/spy")
+
 return function(context, Bridge)
-local Environment = context.Environment
-    Bridge:BindToType("clear-remote-spy-logs", function(data)
-        local Cobalt = Environment.Cobalt
-        assert(Cobalt and Cobalt.shared and Cobalt.shared.ClearLogs, "Cobalt remote spy is not loaded. Call ensure-remote-spy first.")
-
-        Cobalt.shared.ClearLogs()
-
-        return {
-            status = "cleared",
-            message = "All remote spy logs have been cleared."
+    local function SetRule(kind, data, value)
+        local spy = RemoteSpy.Get(context)
+        local matched, applied = spy:SetRule(kind, data.direction, data.remoteName, value)
+        local verb = if kind == "block"
+            then (value and "Blocked" or "Unblocked")
+            else (value and "Ignoring" or "Unignored")
+        local result = {
+            status = "success",
+            message = string.format("%s %s remote %q. Matches %d logged remote(s); the rule also applies to remotes that have not fired yet.",
+                verb, data.direction, data.remoteName, matched),
+            matchedRemotes = matched,
         }
+        if kind == "block" and data.direction == "Outgoing" and spy.OutgoingMode == "unavailable" then
+            result.warning = "Outgoing calls cannot be intercepted on this executor, so this block has no effect."
+        elseif kind == "block" and data.direction == "Incoming" and not applied then
+            result.warning = "Blocking incoming events needs getconnections, which this executor lacks. Events are still logged."
+        end
+        return result
+    end
+
+    Bridge:BindToType("clear-remote-spy-logs", function()
+        RemoteSpy.Get(context):Clear()
+        return { status = "cleared", message = "All remote spy logs have been cleared. Block and ignore rules are kept." }
     end)
 
     Bridge:BindToType("block-remote", function(data)
-        local Cobalt = Environment.Cobalt
-        assert(Cobalt and Cobalt.shared and Cobalt.shared.Logs, "Cobalt remote spy is not loaded. Call ensure-remote-spy first.")
-
-        local remoteName = data.remoteName
-        local direction = data.direction
-        local shouldBlock = data.shouldBlock
-
-        local logTable = Cobalt.shared.Logs[direction]
-        assert(logTable, "Invalid direction: " .. tostring(direction))
-
-        for instance, log in logTable do
-            if typeof(instance) ~= "Instance" then continue end
-
-            local name = ""
-            pcall(function() name = instance.Name end)
-
-            if name == remoteName then
-                if shouldBlock and not log.Blocked then
-                    log:Block()
-                elseif not shouldBlock and log.Blocked then
-                    log:Block() -- toggles
-                end
-
-                return {
-                    status = "success",
-                    message = (shouldBlock and "Blocked" or "Unblocked") .. " remote: " .. remoteName,
-                    blocked = log.Blocked
-                }
-            end
-        end
-
-        error("Remote not found: " .. remoteName .. " in " .. direction .. " logs. Make sure the remote has been logged at least once.")
+        return SetRule("block", data, data.shouldBlock ~= false)
     end)
 
     Bridge:BindToType("ignore-remote", function(data)
-        local Cobalt = Environment.Cobalt
-        assert(Cobalt and Cobalt.shared and Cobalt.shared.Logs, "Cobalt remote spy is not loaded. Call ensure-remote-spy first.")
-
-        local remoteName = data.remoteName
-        local direction = data.direction
-        local shouldIgnore = data.shouldIgnore
-
-        local logTable = Cobalt.shared.Logs[direction]
-        assert(logTable, "Invalid direction: " .. tostring(direction))
-
-        for instance, log in logTable do
-            if typeof(instance) ~= "Instance" then continue end
-
-            local name = ""
-            pcall(function() name = instance.Name end)
-
-            if name == remoteName then
-                if shouldIgnore and not log.Ignored then
-                    log:Ignore()
-                elseif not shouldIgnore and log.Ignored then
-                    log:Ignore() -- toggles
-                end
-
-                return {
-                    status = "success",
-                    message = (shouldIgnore and "Ignoring" or "Unignored") .. " remote: " .. remoteName,
-                    ignored = log.Ignored
-                }
-            end
-        end
-
-        error("Remote not found: " .. remoteName .. " in " .. direction .. " logs. Make sure the remote has been logged at least once.")
+        return SetRule("ignore", data, data.shouldIgnore ~= false)
     end)
 
-    -- Keep Cobalt's implementation details behind one public MCP operation.
-    -- The legacy callbacks above remain internal so this dispatcher can reuse
-    -- their validated filtering and state-change behavior.
     Bridge:BindToType("remote-spy", function(data)
-        Bridge.Callbacks["ensure-remote-spy"]({})
-
+        local spy = RemoteSpy.Get(context)
         local operation = data.operation
-        if operation == "status" then
-            local Cobalt = Environment.Cobalt
-            local function CountLogs(logTable)
-                local count = 0
-                if typeof(logTable) ~= "table" then return count end
-                for _ in logTable do
-                    count += 1
-                end
-                return count
-            end
 
-            return {
-                status = "loaded",
-                outgoingRemotes = CountLogs(Cobalt.shared and Cobalt.shared.Logs and Cobalt.shared.Logs.Outgoing),
-                incomingRemotes = CountLogs(Cobalt.shared and Cobalt.shared.Logs and Cobalt.shared.Logs.Incoming),
-            }
+        if operation == "status" then
+            return spy:Status()
         elseif operation == "list" then
-            return Bridge.Callbacks["get-remote-spy-logs"]({
-                direction = data.direction,
-                remoteNameFilter = data.nameFilter,
-                limit = data.limit,
-                maxCallsPerRemote = data.maxCallsPerRemote,
-                summaryOnly = data.summaryOnly,
-            })
+            return spy:List(data)
         elseif operation == "clear" then
-            return Bridge.Callbacks["clear-remote-spy-logs"]({})
+            spy:Clear()
+            return { status = "cleared", message = "All remote spy logs have been cleared. Block and ignore rules are kept." }
         elseif operation == "block" or operation == "unblock" then
-            return Bridge.Callbacks["block-remote"]({
-                remoteName = data.remoteName,
-                direction = data.direction,
-                shouldBlock = operation == "block",
-            })
+            return SetRule("block", data, operation == "block")
         elseif operation == "ignore" or operation == "unignore" then
-            return Bridge.Callbacks["ignore-remote"]({
-                remoteName = data.remoteName,
-                direction = data.direction,
-                shouldIgnore = operation == "ignore",
-            })
+            return SetRule("ignore", data, operation == "ignore")
+        elseif operation == "configure" then
+            if data.enabled ~= nil then spy.Enabled = data.enabled == true end
+            if data.includeBindables ~= nil then spy.IncludeBindables = data.includeBindables == true end
+            if data.includeExecutorCalls ~= nil then spy.IncludeExecutorCalls = data.includeExecutorCalls == true end
+            return spy:Status()
         end
 
         error("Invalid remote-spy operation: " .. tostring(operation))
