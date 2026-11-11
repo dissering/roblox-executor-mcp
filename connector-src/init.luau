@@ -3,9 +3,16 @@
 --// Variables \\--
 local Compatibility = require("./compat").new()
 local Environment = Compatibility.Environment
+-- Each run takes over from any connector already running in this session. The previous
+-- one sees the generation change and shuts its bridge down, so re-running the loader is a
+-- clean restart instead of a silent no-op.
+local Generation = (tonumber(Environment.MCP_Generation) or 0) + 1
+Environment.MCP_Generation = Generation
 if Environment.MCP_Loaded == true then
-    print("[roblox-mcp] connector is already running in this session, skipping")
-    return
+    print("[roblox-mcp] replacing the connector already running in this session")
+end
+local function IsCurrentConnector()
+    return Environment.MCP_Generation == Generation
 end
 
 assert(type(loadstring) == "function", "This executor needs loadstring to run the MCP connector.")
@@ -309,6 +316,7 @@ require("./bridge/runtime")({
     Environment = Environment,
     CreateBridge = CreateBridge,
     WaitForBridgeClientId = WaitForBridgeClientId,
+    IsCurrentConnector = IsCurrentConnector,
     ScriptMappingPipeline = ScriptMappingPipeline,
     StartUploadQueue = StartUploadQueue,
     PublishScriptMappingStatus = PublishScriptMappingStatus,
