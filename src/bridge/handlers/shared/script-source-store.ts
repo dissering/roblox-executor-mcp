@@ -15,6 +15,8 @@ export interface ScriptSourceIndex {
   placeId: number;
   jobId: string;
   hasFinishedMapping: boolean;
+  /** The client reported that script mapping is off (it starts on demand). */
+  mappingDisabled: boolean;
   mappedSources: number;
   processedSources: number;
   skippedSources: number;
@@ -40,6 +42,7 @@ interface ClientScriptSourceStore {
   placeId: number;
   jobId: string;
   hasFinishedMapping: boolean;
+  mappingDisabled: boolean;
   processedSources: number;
   skippedSources: number;
   sourcesToMap: number;
@@ -54,6 +57,7 @@ interface ClientScriptSourceStore {
 
 export interface UpsertScriptSourcesInput {
   hasFinishedMapping?: boolean;
+  mappingDisabled?: boolean;
   sourcesToMap?: number;
   processedSources?: number;
   skippedSources?: number;
@@ -100,6 +104,7 @@ function getOrCreateStore(identity: ScriptSourceStoreIdentity): ClientScriptSour
       placeId: identity.placeId,
       jobId: identity.jobId,
       hasFinishedMapping: false,
+      mappingDisabled: false,
       processedSources: 0,
       skippedSources: 0,
       sourcesToMap: 0,
@@ -150,6 +155,7 @@ function getScriptSourceIndexSummary(
     placeId: store.placeId,
     jobId: store.jobId,
     hasFinishedMapping: store.hasFinishedMapping,
+    mappingDisabled: store.mappingDisabled,
     mappedSources,
     processedSources,
     skippedSources: store.skippedSources,
@@ -243,6 +249,9 @@ export function upsertScriptSources(
 
   if (revision.acceptsStatus && typeof input.hasFinishedMapping === "boolean") {
     store.hasFinishedMapping = input.hasFinishedMapping;
+  }
+  if (revision.acceptsStatus && typeof input.mappingDisabled === "boolean") {
+    store.mappingDisabled = input.mappingDisabled;
   }
 
   if (revision.acceptsStatus && typeof input.sourcesToMap === "number" && Number.isFinite(input.sourcesToMap)) {

@@ -210,7 +210,7 @@ export default function register(server: McpServer): void {
         return toolTextResponse(`Invalid regex pattern: ${message}`, {}, true);
       }
 
-      const indexResult = await fetchScriptSearchIndex({ allowIncomplete: true });
+      const indexResult = await fetchScriptSearchIndex({ allowIncomplete: true, startMapping: true });
       if (!indexResult.ok) return indexResult.response;
 
       const { matches, totalMatches, limited } = searchScripts(

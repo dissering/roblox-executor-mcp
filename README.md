@@ -176,22 +176,26 @@ end
 ```lua
 getgenv().BridgeURL = "10.0.0.4:16384"                  -- default: localhost:16384
 getgenv().DisableWebSocket = true                        -- force HTTP polling
-getgenv().DisableInitialScriptDecompMapping = true       -- skip initial decompilation
-getgenv().MCP_FailedScriptResyncInterval = 30            -- retry failed script syncs periodically
-getgenv().MCP_FailedScriptResyncBatchSize = 8            -- bound each periodic retry batch
-getgenv().MCP_ScriptMappingWorkers = 24                  -- concurrent decompile workers (1-64)
+getgenv().EnableScriptMapping = true                     -- index every script on connect (off by default)
+getgenv().MCP_ScriptMappingWorkers = 6                   -- concurrent decompile workers (1-64)
 ```
 
 See [Advanced](docs/advanced.md#connector-options) for the full list and limits.
 
-**Quick loader from GitHub:** [`mcp.lua`](mcp.lua) holds every setting above plus a `loadstring` of the published `connector.luau`, so you can paste one file into your executor without the server serving the script:
+**Script indexing:** the connector does not decompile every script on connect, because that can crash heavier games. `get-script-content` decompiles single scripts on demand. `script-grep` and `semantic-search-scripts` start indexing the first time you use them, in a lightweight mode: 6 workers by default, paused while decompilers are cooling down, and one summary line instead of a warning per script. Set `EnableScriptMapping = true` to index on connect instead.
+
+**Quick loader from GitHub:** [`mcp.lua`](mcp.lua) is the whole loader: set `BridgeURL` and run it. It falls back to the executor's HTTP request function when `game:HttpGet` is missing:
 
 ```lua
-getgenv().BridgeURL = "100.84.48.89:16384"
+local BridgeURL = "100.84.48.89:16384"
 
-loadstring(game:HttpGet(
-    "https://raw.githubusercontent.com/dissering/roblox-executor-mcp/main/connector.luau"
-))()
+local url = "https://raw.githubusercontent.com/dissering/roblox-executor-mcp/main/connector.luau"
+local ok, source = pcall(function() return game:HttpGet(url) end)
+if not ok or type(source) ~= "string" then
+    local send = request or http_request or (syn and syn.request) or (http and http.request)
+    source = send({ Url = url, Method = "GET" }).Body
+end
+loadstring(source)({ BridgeURL = BridgeURL })
 ```
 
 This pulls the connector from the `main` branch, so keep your local server up to date with `npm run update`. If the two drift apart, use the loader above, which downloads the connector from your own server.

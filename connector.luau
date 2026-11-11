@@ -1045,56 +1045,95 @@ return b end function a.i():typeof(__modImpl())local b=a.cache.i if not b then b
 local b={}
 b.__index=b
 local c=warn or print
+local d=3
+local e=15
 
-function b.new(d,e)
+local function OneLine(f)
+local g=string.gsub(tostring(f or"unknown error"),"%s*\n+%s*"," | ")
+return g
+end
+
+function b.new(f,g)
 return setmetatable({
-pipeline=d,
-failedResync=e,
+pipeline=f,
+failedResync=g,
 },b)
 end
 
-function b.Publish(d)
-d.pipeline.statusDirty=true
+function b.Publish(f)
+f.pipeline.statusDirty=true
 end
 
-function b.MarkMapped(d,e,f)
-local g=d.pipeline
-local h=g.jobs[e]
-if h and(h.state=="mapped"or h.state=="failed"or h.state=="removed")then
+function b.MarkMapped(f,g,h)
+local i=f.pipeline
+local j=i.jobs[g]
+if j and(j.state=="mapped"or j.state=="failed"or j.state=="removed")then
 return false
 end
 
-if not h then
-h=g:EnsureJob(e)
+if not j then
+j=i:EnsureJob(g)
 end
 
-g:SetJobState(h,"mapped")
-if d.failedResync then d.failedResync:Cancel(h)end
-h.prepared=nil
-h.script=nil
-if f~=false then d:Publish()end
+i:SetJobState(j,"mapped")
+if f.failedResync then f.failedResync:Cancel(j)end
+j.prepared=nil
+j.script=nil
+if h~=false then f:Publish()end
 return true
 end
 
-function b.MarkFailed(d,e,f,g)
-local h=d.pipeline
-local i=h.jobs[e]
-if i and(i.state=="mapped"or i.state=="failed"or i.state=="removed")then
+function b.MarkFailed(f,g,h,i)
+local j=f.pipeline
+local k=j.jobs[g]
+if k and(k.state=="mapped"or k.state=="failed"or k.state=="removed")then
 return false
 end
 
-if not i then
-i=h:EnsureJob(e)
+if not k then
+k=j:EnsureJob(g)
 end
 
-h:SetJobState(i,"failed")
-if d.failedResync then d.failedResync:Schedule(i)end
-i.errorMessage=tostring(f or"unknown error")
-i.prepared=nil
-i.script=nil
-c("[Roblox Executor MCP] Script mapping skipped "..tostring(e)..": "..tostring(f or"unknown error"))
-if g~=false then d:Publish()end
+j:SetJobState(k,"failed")
+if f.failedResync then f.failedResync:Schedule(k)end
+k.errorMessage=tostring(h or"unknown error")
+k.prepared=nil
+k.script=nil
+f:ReportFailure(g,h)
+if i~=false then f:Publish()end
 return true
+end
+
+
+
+function b.ReportFailure(f,g,h)
+f.failureCount=(f.failureCount or 0)+1
+if f.failureCount<=d then
+c("[roblox-mcp] could not index script "..tostring(g)..": "..OneLine(h))
+return
+end
+
+f.pendingFailures=(f.pendingFailures or 0)+1
+f.lastFailure=OneLine(h)
+if f.summaryScheduled then return end
+f.summaryScheduled=true
+
+local function flush()
+f.summaryScheduled=false
+local i=f.pendingFailures or 0
+f.pendingFailures=0
+if i>0 then
+c(string.format(
+"[roblox-mcp] %d more scripts could not be indexed (%d total). Last error: %s",
+i,f.failureCount,tostring(f.lastFailure)
+))
+end
+end
+if type(task)=="table"and type(task.delay)=="function"then
+task.delay(e,flush)
+else
+flush()
+end
 end
 
 return b end function a.j():typeof(__modImpl())local b=a.cache.j if not b then b={c=__modImpl()}a.cache.j=b end return b.c end end do local function __modImpl()
@@ -1158,6 +1197,7 @@ clientId=m,
 scripts=q,
 removedScriptIds=r,
 hasFinishedMapping=u,
+mappingDisabled=d.disabled==true,
 sourcesToMap=d.total,
 processedSources=t,
 skippedSources=d.skipped,
@@ -1979,6 +2019,23 @@ AttachScriptToMappingJob(I,D)
 I.prepared=E
 end
 
+
+
+
+local function ProviderCooldownSeconds(D)
+local E
+for F in string.gmatch(tostring(D or""),"[^\n]+")do
+F=string.match(F,"^%s*(.-)%s*$")
+if F~=""then
+local G=string.match(F,"skipped: cooling down for (%d+)s")
+or string.match(F,"skipped: rate limited for (%d+)s")
+if not G then return nil end
+E=math.min(E or math.huge,tonumber(G))
+end
+end
+return E
+end
+
 local function RetryScriptMapping(D,E,F,G,H)
 local I=H or D:GetDebugId()
 local J=c.jobs[I]
@@ -1988,17 +2045,28 @@ if string.find(tostring(G),"Timed out",1,true)then
 l:Reduce()
 end
 
+local K=ProviderCooldownSeconds(G)
+local L
+if K then
+
+c.decompileCooldownUntil=math.max(
+c.decompileCooldownUntil or 0,
+os.clock()+K
+)
+L=K+math.random()*2
+else
 J.mappingAttempts=(J.mappingAttempts or 0)+1
 if J.mappingAttempts>=z then
 m:MarkFailed(I,G or"Failed to prepare or decompile script source.")
 return
 end
+L=math.min(2^math.max(0,J.mappingAttempts-1),A)
+end
 
 c:SetJobState(J,"queued")
 AttachScriptToMappingJob(J,D)
 J.prepared=E
-local K=math.min(2^math.max(0,J.mappingAttempts-1),A)
-task.delay(K,function()
+task.delay(L,function()
 if F~=c.generation or J.generation~=F then return end
 if J.state~="queued"then return end
 if not r(c.clientId)then
@@ -2076,18 +2144,23 @@ return
 end
 end
 I.prepared=E
-local K,L,M,N=t(
+local K=(c.decompileCooldownUntil or 0)-os.clock()
+if K>0 then
+task.wait(K)
+if F~=c.generation or c.jobs[H]~=I then return end
+end
+local L,M,N,O=t(
 D,
 E,
 F,
 J
 )
-I.prepared=N
-if not I.initialProviderId and N then
-I.initialProviderId=N.initialProviderId
+I.prepared=O
+if not I.initialProviderId and O then
+I.initialProviderId=O.initialProviderId
 end
-if not K then
-RetryScriptMapping(D,N,F,L,H)
+if not L then
+RetryScriptMapping(D,O,F,M,H)
 return
 end
 if F~=c.generation then return end
@@ -2096,7 +2169,7 @@ if I.state=="mapped"or I.state=="failed"or I.state=="removed"then return end
 I.mappingAttempts=0
 l:RecordSuccess()
 
-QueueMappedScriptSource(D,K,M,F,H)
+QueueMappedScriptSource(D,L,N,F,H)
 end
 
 C=function(D,E,F,G,H)
@@ -2487,6 +2560,26 @@ local d=b.ScriptMappingPipeline
 local e=b.GetScriptByDebugId
 local f=b.DecompileScriptSource
 local g=b.QueueMappedScriptSource
+
+
+
+c:BindToType("start-script-mapping",function()
+local h=d.clientId or c.ClientId
+local i=not d.disabled
+and(d.initialScanRunning or d.initialScanFinished)
+b.Environment.MCP_ScriptMappingStarted=true
+if i then
+return{status="already_running",total=d.total,processed=d.processed}
+end
+d.disabled=false
+d.stateVersion+=1
+b.StartScriptMapping(h)
+b.StartFailedScriptResync()
+b.ResumeDeferredScriptMappings()
+b.PublishScriptMappingStatus()
+print"[roblox-mcp] script indexing started for search tools"
+return{status="started"}
+end)
 
 c:BindToTypeRaw("get-script-content",function(h)
 local i
@@ -3543,7 +3636,9 @@ if f.clientId~=q then
 i(q)
 end
 
-if not d.DisableInitialScriptDecompMapping then
+
+
+if d.EnableScriptMapping==true or d.MCP_ScriptMappingStarted==true then
 j(q)
 k()
 l()
@@ -3636,7 +3731,7 @@ local i,j=pcall(h)
 if i and type(j)=="table"then table.insert(f,j)end
 end
 for g,h in{
-"BridgeURL","bridgeurl","DisableWebSocket","DisableInitialScriptDecompMapping",
+"BridgeURL","bridgeurl","DisableWebSocket","EnableScriptMapping",
 "MCP_ScriptMappingWorkers","MCP_FailedScriptResyncInterval","MCP_FailedScriptResyncBatchSize",
 }do
 for i,j in f do
@@ -3856,7 +3951,7 @@ local J=a.g()
 local K=G.new()
 local L=math.max(
 1,
-math.min(math.floor(tonumber(c.MCP_ScriptMappingWorkers)or 24),64)
+math.min(math.floor(tonumber(c.MCP_ScriptMappingWorkers)or 6),64)
 )
 local M=a.h().new(
 K,

@@ -103,7 +103,7 @@ export default function register(server: McpServer): void {
         });
       }
 
-      const indexResult = fetchScriptSearchIndex({ allowIncomplete: true });
+      const indexResult = fetchScriptSearchIndex({ allowIncomplete: true, startMapping: true });
       if (!indexResult.ok) return indexResult.response;
 
       const settings = await loadSemanticSettings();

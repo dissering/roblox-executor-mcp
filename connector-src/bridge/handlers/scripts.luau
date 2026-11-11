@@ -4,6 +4,26 @@ local GetScriptByDebugId = context.GetScriptByDebugId
 local DecompileScriptSource = context.DecompileScriptSource
 local QueueMappedScriptSource = context.QueueMappedScriptSource
 
+    -- Script mapping is off at connect. semantic-search-scripts and script-grep ask for it
+    -- the first time they need the index. Once started it stays on for this session.
+    Bridge:BindToType("start-script-mapping", function()
+        local clientId = ScriptMappingPipeline.clientId or Bridge.ClientId
+        local alreadyRunning = not ScriptMappingPipeline.disabled
+            and (ScriptMappingPipeline.initialScanRunning or ScriptMappingPipeline.initialScanFinished)
+        context.Environment.MCP_ScriptMappingStarted = true
+        if alreadyRunning then
+            return { status = "already_running", total = ScriptMappingPipeline.total, processed = ScriptMappingPipeline.processed }
+        end
+        ScriptMappingPipeline.disabled = false
+        ScriptMappingPipeline.stateVersion += 1
+        context.StartScriptMapping(clientId)
+        context.StartFailedScriptResync()
+        context.ResumeDeferredScriptMappings()
+        context.PublishScriptMappingStatus()
+        print("[roblox-mcp] script indexing started for search tools")
+        return { status = "started" }
+    end)
+
     Bridge:BindToTypeRaw("get-script-content", function(data)
         local source
         local scriptInstance
