@@ -82,13 +82,19 @@ while IsCurrentConnector() do
     while Bridge.Connected and IsCurrentConnector() do
         task.wait(0.25)
     end
-    if IsCurrentConnector() then
+    local replaced = Bridge.Replaced == true
+    if replaced then
+        Report("warn", "another connector took over this session, stopping this one")
+    elseif IsCurrentConnector() then
         Report("warn", "disconnected: " .. tostring(Bridge.DisconnectReason or "unknown reason") .. ", reconnecting")
     end
     Bridge:Destroy()
 
     if ScriptMappingPipeline.bridge == Bridge then
         ScriptMappingPipeline.bridge = nil
+    end
+    if replaced then
+        return
     end
     task.wait(1)
 end

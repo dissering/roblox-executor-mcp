@@ -168,6 +168,14 @@ end
 return n
 end
 
+
+
+function k.MarkReplaced(l,m)
+l.Replaced=true
+l.DisconnectReason="replaced: "..tostring(m and m.reason or"another connector took over")
+l.Connected=false
+end
+
 function k.Destroy(l)
 l.Connected=false
 local m=coroutine.running()
@@ -379,6 +387,10 @@ if v.type=="registered"then
 m.ClientId=v.clientId
 return
 end
+if v.type=="replaced"then
+m:MarkReplaced(v)
+return
+end
 
 local w=m:HandleMessage(v)
 local x=m.WebSocket
@@ -494,6 +506,10 @@ x={w}
 end
 
 for y,z in ipairs(x)do
+if z.type=="replaced"then
+n:MarkReplaced(z)
+break
+end
 t=true
 n:TrackThread(function()
 local A=n:HandleMessage(z)
@@ -3560,13 +3576,19 @@ end
 while p.Connected and m()do
 task.wait(0.25)
 end
-if m()then
+local s=p.Replaced==true
+if s then
+Report("warn","another connector took over this session, stopping this one")
+elseif m()then
 Report("warn","disconnected: "..tostring(p.DisconnectReason or"unknown reason")..", reconnecting")
 end
 p:Destroy()
 
 if f.bridge==p then
 f.bridge=nil
+end
+if s then
+return
 end
 task.wait(1)
 end

@@ -362,6 +362,13 @@ fallbackBridge:Destroy()
 assert(cancelledThreads[fallbackPoll], "HTTP cleanup must cancel polling")
 failRegistration = false
 
+-- A "replaced" notice from the server stops the bridge for good.
+local replacedBridge = ConnectBridge(wsBridgeClient)
+replacedBridge.WebSocket.OnMessage:Fire({ type = "replaced", reason = "another connector" })
+assert(replacedBridge.Replaced == true and replacedBridge.Connected == false, "replaced notice marks the bridge")
+assert(string.find(replacedBridge.DisconnectReason, "another connector", 1, true), "reason is kept")
+replacedBridge:Destroy()
+
 -- In-flight HTTP commands are tracked and cancelled with the bridge.
 local httpBridge = ConnectBridge(httpBridgeClient)
 local slowStarted = false

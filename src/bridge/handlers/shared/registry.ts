@@ -98,16 +98,20 @@ export function registerClient(info: {
 }): string {
   const existing = info.sessionId ? findClientBySessionId(info.sessionId) : undefined;
   if (existing) {
+    // Two connectors in one Roblox session share a session id. Tell the older one it was
+    // replaced so it stops, instead of reconnecting and kicking the newer one off in a loop.
+    const replacedNotice = JSON.stringify({ type: "replaced", reason: "Another connector registered for this Roblox session." });
     if (existing.ws && existing.ws !== info.ws) {
       wsToClientId.delete(existing.ws);
       try {
+        existing.ws.send(replacedNotice);
         existing.ws.close();
       } catch {
         // Best effort cleanup; the new transport below is authoritative.
       }
     }
 
-    existing.pendingPollResolve?.([]);
+    existing.pendingPollResolve?.(existing.transport === "http" && info.transport === "ws" ? [replacedNotice] : []);
     existing.username = info.username;
     existing.userId = info.userId;
     existing.placeId = info.placeId;

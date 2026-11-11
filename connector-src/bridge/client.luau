@@ -46,6 +46,14 @@ local BaseBridge = {}; do
         return thread
     end
 
+    -- The server sends "replaced" when another connector registers for the same Roblox
+    -- session. Stop for good so the two do not keep kicking each other off.
+    function BaseBridge:MarkReplaced(data)
+        self.Replaced = true
+        self.DisconnectReason = "replaced: " .. tostring(data and data.reason or "another connector took over")
+        self.Connected = false
+    end
+
     function BaseBridge:Destroy()
         self.Connected = false
         local current = coroutine.running()
@@ -257,6 +265,10 @@ local WebSocketBridge = setmetatable({}, {__index = BaseBridge}); do
                 self.ClientId = data.clientId
                 return
             end
+            if data.type == "replaced" then
+                self:MarkReplaced(data)
+                return
+            end
 
             local response = self:HandleMessage(data)
             local socket = self.WebSocket
@@ -372,6 +384,10 @@ local HTTPBridge = setmetatable({}, {__index = BaseBridge}); do
                         end
 
                         for _, command in ipairs(commands) do
+                            if command.type == "replaced" then
+                                self:MarkReplaced(command)
+                                break
+                            end
                             gotCommands = true
                             self:TrackThread(function()
                                 local result = self:HandleMessage(command)
