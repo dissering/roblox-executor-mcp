@@ -114,6 +114,8 @@ local function NewExecutor(world, features)
         api.getconnections = function(signal)
             local list = {}
             for _, connection in signal.connections do
+                -- Like Athena: disabled connections are not listed.
+                if connection.disabled or not connection.callback then continue end
                 table.insert(list, {
                     Function = connection.callback,
                     Disable = function() connection.disabled = true end,

@@ -261,14 +261,21 @@ function RemoteSpy:ApplyIncomingBlock(instance)
     if not watch or type(getconnections) ~= "function" then return false end
     local name = self:SafeIndex(instance, "Name") or "?"
     local shouldBlock = self.BlockRules.Incoming[name] == true
+    watch.Disabled = watch.Disabled or {}
     local ok = pcall(function()
-        for _, connection in getconnections(instance.OnClientEvent) do
-            if connection.Function == watch.Handler then continue end
-            if shouldBlock then
+        if shouldBlock then
+            for _, connection in getconnections(instance.OnClientEvent) do
+                if connection.Function == watch.Handler then continue end
                 connection:Disable()
-            else
-                connection:Enable()
+                table.insert(watch.Disabled, connection)
             end
+        else
+            -- Some executors (Athena) drop disabled connections from getconnections, so
+            -- re-enable the exact objects disabled earlier instead of listing again.
+            for _, connection in watch.Disabled do
+                pcall(function() connection:Enable() end)
+            end
+            table.clear(watch.Disabled)
         end
     end)
     return ok
@@ -509,6 +516,11 @@ function RemoteSpy.Get(context)
     local environment = context.Environment
     local existing = environment.MCP_RemoteSpy
     if type(existing) == "table" and type(existing.List) == "function" then
+        -- A re-run connector brings newer code. Hooks call methods through the spy table,
+        -- so swapping the metatable upgrades them while keeping hooks, logs and rules.
+        if getmetatable(existing) ~= RemoteSpy then
+            setmetatable(existing, RemoteSpy)
+        end
         return existing
     end
     local spy = RemoteSpy.new({

@@ -2986,14 +2986,21 @@ local l=i.Lookup"getconnections"
 if not k or type(l)~="function"then return false end
 local m=i:SafeIndex(j,"Name")or"?"
 local n=i.BlockRules.Incoming[m]==true
+k.Disabled=k.Disabled or{}
 local o=pcall(function()
+if n then
 for o,p in l(j.OnClientEvent)do
 if p.Function==k.Handler then continue end
-if n then
 p:Disable()
-else
-p:Enable()
+table.insert(k.Disabled,p)
 end
+else
+
+
+for o,p in k.Disabled do
+pcall(function()p:Enable()end)
+end
+table.clear(k.Disabled)
 end
 end)
 return o
@@ -3234,6 +3241,11 @@ function b.Get(i)
 local j=i.Environment
 local k=j.MCP_RemoteSpy
 if type(k)=="table"and type(k.List)=="function"then
+
+
+if getmetatable(k)~=b then
+setmetatable(k,b)
+end
 return k
 end
 local l=b.new{
