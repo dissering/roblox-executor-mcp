@@ -42,6 +42,7 @@ local function download(url)
     return response.Body or response.body
 end
 
+print("[roblox-mcp] loader running, downloading connector for " .. tostring(env.BridgeURL))
 local source = download(CONNECTOR_URL)
 local chunk, compileError = loadstring(source)
 assert(chunk, "MCP loader: " .. tostring(compileError))

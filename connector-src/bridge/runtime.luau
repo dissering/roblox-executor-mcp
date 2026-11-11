@@ -10,16 +10,32 @@ local StartScriptMapping = context.StartScriptMapping
 local StartFailedScriptResync = context.StartFailedScriptResync
 local ResumeDeferredScriptMappings = context.ResumeDeferredScriptMappings
 --// Main Loop \\--
+-- Report state changes so a connector that cannot reach the server is not silent.
+-- Repeats of the same message are suppressed.
+local lastStatus
+local function Report(level, message)
+    if message == lastStatus then return end
+    lastStatus = message
+    local output = if level == "warn" then warn else print
+    output("[roblox-mcp] " .. message)
+end
+
+Report("print", "connector loaded, connecting to " .. tostring(Environment.BridgeURL))
+
 while true do
     local success, Bridge = pcall(CreateBridge)
-    
+
     if not success then
+        Report("warn", "cannot connect: " .. tostring(Bridge) .. " (retrying)")
         task.wait(3)
         continue
     end
 
     local clientId = WaitForBridgeClientId(Bridge)
     if clientId then
+        Report("print", "connected to " .. tostring(Environment.BridgeURL)
+            .. " via " .. (if Bridge.WebSocket then "WebSocket" else "HTTP polling")
+            .. " as " .. tostring(clientId))
         ScriptMappingPipeline.bridge = Bridge
         StartUploadQueue()
 
@@ -52,7 +68,12 @@ while true do
         registerHandlers(context, Bridge)
     end
 
+    if not clientId then
+        Report("warn", "connected, but the server never confirmed registration")
+    end
+
     Bridge:WaitForDisconnect()
+    Report("warn", "disconnected: " .. tostring(Bridge.DisconnectReason or "unknown reason") .. ", reconnecting")
     Bridge:Destroy()
 
     if ScriptMappingPipeline.bridge == Bridge then

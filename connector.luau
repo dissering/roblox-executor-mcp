@@ -258,6 +258,8 @@ Method="GET"
 
 if n then
 m=o
+else
+l.LastProbeError="request failed: "..tostring(o)
 end
 end)
 l.ProbeThread=n
@@ -268,14 +270,17 @@ l.ProbeThread=nil
 
 if m==nil then
 task.cancel(n)
+l.LastProbeError=l.LastProbeError or("no response from http://"..f.." within 5 seconds")
 return false
 end
 
 
 if m.StatusCode==426 or m.StatusCode==200 then
+l.LastProbeError=nil
 return true
 end
 
+l.LastProbeError="unexpected HTTP status "..tostring(m.StatusCode).." from http://"..f.." (is this the MCP server?)"
 return false
 end)
 
@@ -303,7 +308,7 @@ local q=0
 while not m:IsAlive()do
 q+=1
 if q>=p then
-error("Failed to connect to bridge server after "..p.." attempts")
+error("Failed to reach the MCP server at "..f.." after "..p.." attempts: "..tostring(m.LastProbeError or"unknown error"))
 end
 task.wait(n)
 n=math.min(n*1.5,o)
@@ -351,6 +356,7 @@ if u<3 then
 continue
 end
 
+m.DisconnectReason="3 heartbeat checks failed in a row: "..tostring(m.LastProbeError or"unknown error")
 m.Connected=false
 break
 end
@@ -383,6 +389,7 @@ end)
 
 
 m.CloseConnection=m.WebSocket.OnClose:Connect(function()
+m.DisconnectReason=m.DisconnectReason or"the WebSocket was closed"
 m.Connected=false
 end)
 
@@ -421,7 +428,7 @@ local r=0
 while not n:IsAlive()do
 r+=1
 if r>=q then
-error("Failed to connect to bridge server after "..q.." attempts")
+error("Failed to reach the MCP server at "..f.." after "..q.." attempts: "..tostring(n.LastProbeError or"unknown error"))
 end
 task.wait(o)
 o=math.min(o*1.5,p)
@@ -452,8 +459,8 @@ n.PollThread=task.spawn(function()
 local s=0
 
 while n.Connected do
-local t=false local
-u=pcall(function()
+local t=false
+local u,v=pcall(function()
 local u="http://"..f.."/poll"
 if n.ClientId then
 u=u.."?clientId="..n.ClientId
@@ -467,6 +474,7 @@ Method="GET"
 if v.StatusCode~=204 and v.StatusCode~=200 then
 s+=1
 if s>=3 then
+n.DisconnectReason="3 polls in a row returned HTTP "..tostring(v.StatusCode)
 n.Connected=false
 end
 
@@ -508,6 +516,7 @@ end)
 if not u then
 s+=1
 if s>=3 then
+n.DisconnectReason="3 polls in a row failed: "..tostring(v)
 n.Connected=false
 end
 end
@@ -3467,37 +3476,53 @@ local j=b.StartScriptMapping
 local k=b.StartFailedScriptResync
 local l=b.ResumeDeferredScriptMappings
 
-while true do
-local m,n=pcall(c)
 
-if not m then
+
+local m
+local function Report(n,o)
+if o==m then return end
+m=o
+local p=if n=="warn"then warn else print
+p("[roblox-mcp] "..o)
+end
+
+Report("print","connector loaded, connecting to "..tostring(d.BridgeURL))
+
+while true do
+local n,o=pcall(c)
+
+if not n then
+Report("warn","cannot connect: "..tostring(o).." (retrying)")
 task.wait(3)
 continue
 end
 
-local o=e(n)
-if o then
-f.bridge=n
+local p=e(o)
+if p then
+Report("print","connected to "..tostring(d.BridgeURL)
+.." via "..(if o.WebSocket then"WebSocket"else"HTTP polling")
+.." as "..tostring(p))
+f.bridge=o
 g()
 
-if f.clientId~=o then
-i(o)
+if f.clientId~=p then
+i(p)
 end
 
 if not d.DisableInitialScriptDecompMapping then
-j(o)
+j(p)
 k()
 l()
 h()
 else
-f.clientId=o
+f.clientId=p
 f.disabled=true
 f.stateVersion+=1
 h()
 end
 end
 
-local p={a.n()
+local q={a.n()
 ,a.o()
 ,a.p()
 ,a.r()
@@ -3505,14 +3530,19 @@ local p={a.n()
 ,a.t()
 ,
 }
-for q,r in p do
-r(b,n)
+for r,s in q do
+s(b,o)
 end
 
-n:WaitForDisconnect()
-n:Destroy()
+if not p then
+Report("warn","connected, but the server never confirmed registration")
+end
 
-if f.bridge==n then
+o:WaitForDisconnect()
+Report("warn","disconnected: "..tostring(o.DisconnectReason or"unknown reason")..", reconnecting")
+o:Destroy()
+
+if f.bridge==o then
 f.bridge=nil
 end
 task.wait(1)
@@ -3525,6 +3555,7 @@ end end function a.u():typeof(__modImpl())local b=a.cache.u if not b then b={c=_
 local b=a.a().new()
 local c=b.Environment
 if c.MCP_Loaded==true then
+print"[roblox-mcp] connector is already running in this session, skipping"
 return
 end
 
