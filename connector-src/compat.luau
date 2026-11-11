@@ -67,6 +67,20 @@ function Compat.new(runtime)
         }
     end
 
+    -- Some executors (Athena) reject game:HttpGet, so fall back to the request function.
+    function api.HttpGet(url)
+        local ok, body = pcall(function()
+            return game:HttpGet(url)
+        end)
+        if ok and type(body) == "string" then
+            return body
+        end
+        local response = api.Request({ Url = url, Method = "GET" })
+        assert(response.StatusCode == 200 and type(response.Body) == "string",
+            "HTTP GET " .. url .. " failed with status " .. tostring(response.StatusCode))
+        return response.Body
+    end
+
     function api.SetThreadIdentity(identity)
         if not setIdentity then return false end
         local ok = pcall(setIdentity, identity or 8)

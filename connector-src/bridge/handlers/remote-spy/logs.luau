@@ -11,7 +11,7 @@ local Environment = context.Environment
         -- Load Cobalt
         context.Compatibility.RequireRemoteSpySupport()
         local success, err = pcall(function()
-            loadstring(game:HttpGet("https://github.com/notpoiu/cobalt/releases/latest/download/Cobalt.luau"))()
+            loadstring(context.Compatibility.HttpGet("https://github.com/notpoiu/cobalt/releases/latest/download/Cobalt.luau"))()
         end)
 
         if not success then
