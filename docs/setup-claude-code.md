@@ -1,20 +1,29 @@
 # Claude Code (CLI) Setup
 
+The harness installer configures Claude Code for you (`npm run install:harnesses`, then select **Claude Code**). It runs `claude mcp add` with the same arguments shown below.
+
+Before setting it up by hand, build the server once from the repo root:
+
+```bash
+npm install
+npm run build
+```
+
 ## 1. Add the MCP server
 
-Run this command in your terminal:
+Available in every project (user scope):
 
 ```bash
-claude mcp add roblox-executor-mcp -- node /path/to/roblox-executor-mcp/dist/index.js
+claude mcp add --scope user roblox-mcp -- node /path/to/roblox-executor-mcp/dist/index.js --server-name roblox-mcp
 ```
 
-Replace `/path/to/roblox-executor-mcp` with the actual path where you cloned the repo.
-
-This adds the server to your local project config (`.claude/settings.local.json`). To add it globally instead, use:
+Only in the current project, private to you (the default, local scope):
 
 ```bash
-claude mcp add --global roblox-executor-mcp -- node /path/to/roblox-executor-mcp/dist/index.js
+claude mcp add roblox-mcp -- node /path/to/roblox-executor-mcp/dist/index.js --server-name roblox-mcp
 ```
+
+Replace `/path/to/roblox-executor-mcp` with the absolute path where you cloned the repo. Use `--scope project` instead to write a shared `.mcp.json` in the project root.
 
 ## 2. Verify
 
@@ -24,11 +33,11 @@ Start Claude Code and run:
 /mcp
 ```
 
-You should see `roblox-executor-mcp` listed with a status of `connected`. If it shows `failed`:
+`roblox-mcp` should show as `connected`. If it shows `failed`:
 
-- Make sure you ran `pnpm install && pnpm run build` first
-- Check that the path to `dist/index.js` is correct
-- Ensure Node.js ≥ 18 is installed
+- Confirm `dist/index.js` exists (run `npm run build`)
+- Check the path you passed to `claude mcp add`
+- Confirm Node.js 18 or newer is installed (`node -v`)
 
 ## Managing the server
 
@@ -36,6 +45,6 @@ You should see `roblox-executor-mcp` listed with a status of `connected`. If it 
 # List configured MCP servers
 claude mcp list
 
-# Remove the server
-claude mcp remove roblox-executor-mcp
+# Remove the server (add --scope user if you added it there)
+claude mcp remove roblox-mcp
 ```

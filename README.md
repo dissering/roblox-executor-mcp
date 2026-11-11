@@ -18,8 +18,10 @@ Use it to see connected Roblox clients, inspect scripts, run tools, view server 
 
 ## Features
 
-- **Code Execution** — Run Lua code and fetch data from the game client.
-- **Script Inspection** — Decompile scripts and search across all sources.
+- **Code Execution** — Run Luau code or a local file and fetch data from the game client.
+- **Script Inspection** — Decompile scripts, read line ranges, and grep across all sources.
+- **Semantic Search** — Find scripts by behavior with a local embedding index (Ollama `embeddinggemma` or another provider).
+- **Console Output** — Read the client's output log.
 - **Instance Search** — CSS-like selectors and hierarchy trees.
 - **Remote Spy** — Intercept, log, block, and ignore Remotes/Bindables via [Cobalt](https://github.com/notpoiu/cobalt).
 - **GUI Interaction** — Click buttons and type into text boxes.
@@ -27,14 +29,32 @@ Use it to see connected Roblox clients, inspect scripts, run tools, view server 
 - **Multi-Client** — Connect multiple Roblox clients at once.
 - **Primary / Secondary** — Multiple MCP instances auto-coordinate with automatic promotion. Supports remote relaying via `--baseurl`. See [Advanced](docs/advanced.md).
 
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `list-clients` / `set-active-client` | List connected Roblox clients and choose which one tools target |
+| `execute` / `execute-file` | Run Luau source, or a local `.luau` file, in the client |
+| `get-data-by-code` | Run Luau and return its result |
+| `get-game-info` | Place, job, executor name/version, and detected executor functions |
+| `get-console-output` | Recent client output log entries |
+| `search-instances` | Find instances with CSS-like selectors |
+| `get-descendants-tree` | Hierarchy tree of an instance |
+| `get-script-content` | Decompiled source of a script, optionally a line range |
+| `script-grep` | Regex or literal search across all mapped script sources |
+| `semantic-search-scripts` | Search scripts by behavior using the semantic index |
+| `remote-spy` | Cobalt-based remote and bindable logging, blocking, and ignoring |
+| `click-button` / `type-text-box` | Interact with GUI buttons and text boxes |
+| `list-roblox-windows` / `screenshot-window` | List and capture Roblox windows (Windows only) |
+
 ## Tutorial
 
 [![roblox-executor-mcp installation guide](http://img.youtube.com/vi/Tcy5RNf1TRc/0.jpg)](https://youtube.com/watch?v=Tcy5RNf1TRc)
 
 ## Prerequisites
 
-- **Node.js** ≥ 18
-- **Bun** ≥ 1.3 for the interactive OpenTUI harness installer
+- **Node.js** ≥ 18 (≥ 22 to run the test suite)
+- **Bun** ≥ 1.3 for the interactive OpenTUI harness installer (installed automatically if missing)
 - **A Roblox executor** that supports `loadstring`, `request`, and (preferably) `WebSocket`
 
 ## Executor compatibility
@@ -63,13 +83,11 @@ cd roblox-executor-mcp
 
 ### 2. Run the harness installer
 
-The installer builds the server, lets you choose AI clients, writes supported MCP configs, and prints the Roblox loader script.
+The installer builds the server, lets you choose AI clients, writes supported MCP configs, and prints the Roblox loader script. It supports Codex, Claude Code, OpenCode, Cursor, Trae, Antigravity, Gemini CLI, GitHub Copilot, VS Code Copilot, Claude Desktop, Windsurf, Cline, Continue, ZCode, BLACKBOX AI, and more. It backs up any config file it edits to a `.bak` copy first.
 
 ```bash
 npm run install:harnesses
 ```
-
-The normal server build consumes the committed `connector.luau` artifact, so harness installs do not require Darklua. Connector developers can install the pinned tool with `rokit install`, edit `connector-src/`, and regenerate the artifact with `npm run build:connector`.
 
 The picker is built with [OpenTUI](https://opentui.com/) and runs through Bun. `npm run install:harnesses` installs Bun first if it is not already available. It shows detected local clients by default; if none are detected, it warns you to install a harness first. Press `s` in the picker or pass `--show-all-harnesses` to reveal every supported config target. If your terminal has trouble with the interactive picker, use the plain numbered prompt:
 
@@ -108,6 +126,7 @@ If you prefer to configure a client yourself, use the setup guide for your clien
 | Claude Desktop | [Setup Guide](docs/setup-claude-desktop.md) |
 | Claude Code    | [Setup Guide](docs/setup-claude-code.md)    |
 | Codex CLI      | [Setup Guide](docs/setup-codex.md)          |
+| OpenCode       | [Setup Guide](docs/setup-opencode.md)       |
 | Windsurf       | [Setup Guide](docs/setup-windsurf.md)       |
 | Antigravity    | [Setup Guide](docs/setup-antigravity.md)    |
 | BLACKBOX AI    | [Setup Guide](docs/setup-blackbox.md)       |
@@ -160,13 +179,53 @@ getgenv().DisableWebSocket = true                        -- force HTTP polling
 getgenv().DisableInitialScriptDecompMapping = true       -- skip initial decompilation
 getgenv().MCP_FailedScriptResyncInterval = 30            -- retry failed script syncs periodically
 getgenv().MCP_FailedScriptResyncBatchSize = 8            -- bound each periodic retry batch
+getgenv().MCP_ScriptMappingWorkers = 24                  -- concurrent decompile workers (1-64)
 ```
+
+See [Advanced](docs/advanced.md#connector-options) for the full list and limits.
+
+**Quick loader from GitHub:** [`mcp.lua`](mcp.lua) holds every setting above plus a `loadstring` of the published `connector.luau`, so you can paste one file into your executor without the server serving the script:
+
+```lua
+getgenv().BridgeURL = "100.84.48.89:16384"
+
+loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/dissering/roblox-executor-mcp/main/connector.luau"
+))()
+```
+
+This pulls the connector from the `main` branch, so keep your local server up to date with `npm run update`. If the two drift apart, use the loader above, which downloads the connector from your own server.
 
 After the MCP server starts and Roblox connects, open the dashboard:
 
 ```text
 http://localhost:16384/
 ```
+
+## Development
+
+```bash
+npm install
+npm run build          # TypeScript server into dist/
+npm run dev            # start the local dev server
+```
+
+The server build uses the committed `connector.luau`, so normal installs do not need Darklua. To change the Roblox connector, edit `connector-src/`, install the pinned toolchain with `rokit install`, and regenerate the bundle:
+
+```bash
+npm run build:connector
+```
+
+Commit the regenerated `connector.luau` together with the `connector-src/` change.
+
+`npm test` builds everything, then runs the Node tests and the Luau tests. It needs `darklua` and the [`luau`](https://github.com/luau-lang/luau/releases) CLI on your `PATH`.
+
+## Troubleshooting
+
+- **Client never shows up:** check that the loader's `BridgeURL` matches the machine running the server, and that nothing else uses port `16384`. Open `http://localhost:16384/` to confirm the server is up.
+- **MCP client shows the server as failed:** run `npm run build` and check the absolute path to `dist/index.js` in its config.
+- **Executor without WebSocket:** the connector falls back to HTTP polling automatically. Set `DisableWebSocket = true` to force it.
+- **Tools time out after reconnecting Roblox:** rerun the loader in a fresh client after updating the server so the connector and server match.
 
 ## Community
 

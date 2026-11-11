@@ -139,6 +139,50 @@ end
 end
 end
 
+function k.TrackThread(l,m)
+local n
+n=task.spawn(function()
+m()
+if n and l.CommandThreads then
+l.CommandThreads[n]=nil
+end
+end)
+
+if l.CommandThreads and coroutine.status(n)~="dead"then
+l.CommandThreads[n]=true
+end
+return n
+end
+
+function k.Destroy(l)
+l.Connected=false
+local m=coroutine.running()
+for n,o in{"AliveThread","PollThread","ProbeThread"}do
+local p=l[o]
+l[o]=nil
+if p and p~=m then pcall(task.cancel,p)end
+end
+if l.CommandThreads then
+local n=l.CommandThreads
+l.CommandThreads={}
+for o in n do
+if o~=m then pcall(task.cancel,o)end
+end
+end
+for n,o in{"MessageConnection","CloseConnection"}do
+local p=l[o]
+l[o]=nil
+if p then pcall(function()p:Disconnect()end)end
+end
+if l.WebSocket then
+local n=l.WebSocket
+l.WebSocket=nil
+pcall(function()n:Close()end)
+end
+if l.Callbacks then table.clear(l.Callbacks)end
+if l.RawCallbacks then table.clear(l.RawCallbacks)end
+end
+
 function k.HandleMessage(l,m)
 if l.Callbacks[m.type]then
 local n,o=pcall(function()
@@ -202,9 +246,11 @@ if n then
 m=o
 end
 end)
+l.ProbeThread=n
 
 local o=os.clock()
 repeat task.wait(0.05)until m~=nil or os.clock()-o>5
+l.ProbeThread=nil
 
 if m==nil then
 task.cancel(n)
@@ -273,14 +319,12 @@ m.Connected=true
 m.Callbacks={}
 m.ClientId=nil
 
-
-m.WebSocket:Send(e:JSONEncode(h()))
-
 m.AliveThread=task.spawn(function()
 local u=0
-while task.wait(1)do
+while m.Connected do
+task.wait(1)
 if not m.Connected then
-continue
+break
 end
 
 if m:IsAlive()then
@@ -297,13 +341,17 @@ m.Connected=false
 break
 end
 
+local v=m.WebSocket
+if v then
 pcall(function()
-m.WebSocket:Close()
+v:Close()
 end)
+end
 end)
 
 
-m.WebSocket.OnMessage:Connect(function(u)
+
+m.MessageConnection=m.WebSocket.OnMessage:Connect(function(u)
 local v=e:JSONDecode(u)
 
 
@@ -313,15 +361,25 @@ return
 end
 
 local w=m:HandleMessage(v)
-if w then
-m.WebSocket:Send(e:JSONEncode(w))
+local x=m.WebSocket
+if w and x then
+x:Send(e:JSONEncode(w))
 end
 end)
 
 
-m.WebSocket.OnClose:Connect(function()
+m.CloseConnection=m.WebSocket.OnClose:Connect(function()
 m.Connected=false
 end)
+
+
+local u,v=pcall(function()
+m.WebSocket:Send(e:JSONEncode(h()))
+end)
+if not u then
+m:Destroy()
+error(v)
+end
 
 return m
 end
@@ -359,6 +417,7 @@ n.Connected=true
 n.Callbacks={}
 n.PollInterval=0.1
 n.ClientId=nil
+n.CommandThreads={}
 
 
 pcall(function()
@@ -414,9 +473,9 @@ end
 
 for y,z in ipairs(x)do
 t=true
-task.spawn(function()
+n:TrackThread(function()
 local A=n:HandleMessage(z)
-if A==nil then return end
+if A==nil or not n.Connected then return end
 
 
 c{
@@ -3099,6 +3158,7 @@ r(b,n)
 end
 
 n:WaitForDisconnect()
+n:Destroy()
 
 if f.bridge==n then
 f.bridge=nil

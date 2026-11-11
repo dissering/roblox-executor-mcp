@@ -38,7 +38,7 @@ const colors = {
 const ALL_HARNESSES = [
   { id: "codex", name: "Codex", group: "Recommended", config: { kind: "codexToml", path: homePath(".codex", "config.toml") } },
   { id: "claude-code", name: "Claude Code", group: "Recommended", config: { kind: "claudeCli" } },
-  { id: "opencode", name: "OpenCode", group: "Recommended", config: { kind: "opencodeJson", path: homePath(".config", "opencode", "opencode.json") } },
+  { id: "opencode", name: "OpenCode", group: "Recommended", config: { kind: "opencodeJson", path: opencodeConfigPath() } },
   { id: "cursor", name: "Cursor", group: "Recommended", config: { kind: "mcpServersJson", path: homePath(".cursor", "mcp.json") } },
   { id: "trae", name: "Trae", group: "Recommended", config: { kind: "mcpServersJson", path: traeConfigPath() } },
   { id: "antigravity", name: "Antigravity", group: "Recommended", config: { kind: "mcpServersJson", path: antigravityConfigPath() } },
@@ -1713,6 +1713,8 @@ async function writeOpencodeJson(filePath, serverEntry) {
     type: "local",
     command: ["node", ...mcpServerArgs(serverEntry)],
     enabled: true,
+    // OpenCode gives a local server 5s to list tools by default, which a cold start can miss.
+    timeout: 30000,
   };
   await writeJson(filePath, json);
 }
@@ -2374,7 +2376,7 @@ function detectHarnessAvailability(harness) {
     ],
     opencode: [
       commandCheck("opencode"),
-      pathCheck(homePath(".config", "opencode")),
+      pathCheck(opencodeConfigDir()),
       configCheck(harness),
     ],
     cursor: [
@@ -3607,6 +3609,21 @@ function vscodeSettingsPath() {
         ? homePath("Library", "Application Support")
         : process.env.XDG_CONFIG_HOME || homePath(".config");
   return path.join(appData, "Code", "User", "settings.json");
+}
+
+// OpenCode resolves its global config through XDG paths on every platform, Windows included.
+function opencodeConfigDir() {
+  return path.join(process.env.XDG_CONFIG_HOME || homePath(".config"), "opencode");
+}
+
+function opencodeConfigPath() {
+  if (process.env.OPENCODE_CONFIG) return expandHome(process.env.OPENCODE_CONFIG);
+  const dir = opencodeConfigDir();
+  const jsonPath = path.join(dir, "opencode.json");
+  const jsoncPath = path.join(dir, "opencode.jsonc");
+  // Writing opencode.json next to an existing opencode.jsonc would split the config in two.
+  if (!fsSync.existsSync(jsonPath) && fsSync.existsSync(jsoncPath)) return jsoncPath;
+  return jsonPath;
 }
 
 function gooseConfigPath() {

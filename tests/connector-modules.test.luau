@@ -7,6 +7,7 @@ local Concurrency = require("../connector-src/mapping/concurrency")
 local JobStatus = require("../connector-src/mapping/job-status")
 local FailedResync = require("../connector-src/mapping/failed-resync")
 local DecompilerClientFactory = require("../connector-src/decompiler/client")
+local BridgeClientFactory = require("../connector-src/bridge/client")
 
 local state = ScriptMappingState.new()
 state.configuredWorkers = 24
@@ -212,5 +213,184 @@ table.remove(scheduled, 1)()
 assert(pool.ActiveWorkers == 1 and #scheduled == 1, "new work starts only after stale work releases capacity")
 table.remove(scheduled, 1)()
 assert(pool.ActiveWorkers == 0 and ran[1] == "new" and ran[2] == nil)
+
+--// Bridge lifecycle \--
+local cancelledThreads = {}
+setfenv(BridgeClientFactory, setmetatable({
+    task = {
+        spawn = function(callback)
+            local thread = coroutine.create(callback)
+            assert(coroutine.resume(thread))
+            return thread
+        end,
+        wait = function()
+            coroutine.yield()
+        end,
+        cancel = function(thread)
+            cancelledThreads[thread] = true
+        end,
+    },
+}, { __index = getfenv(BridgeClientFactory) }))
+
+local function NewSignal()
+    local signal = { connections = {} }
+    function signal:Connect(callback)
+        local connection = { callback = callback }
+        function connection:Disconnect()
+            self.callback = nil
+        end
+        table.insert(self.connections, connection)
+        return connection
+    end
+    function signal:Fire(value)
+        for _, connection in self.connections do
+            if connection.callback then connection.callback(value) end
+        end
+    end
+    function signal:ActiveCount()
+        local count = 0
+        for _, connection in self.connections do
+            if connection.callback then count += 1 end
+        end
+        return count
+    end
+    return signal
+end
+
+local sockets = {}
+local failRegistration = false
+local blockProbe = false
+local serveCommand = false
+local respondCalls = 0
+
+local function MockRequest(options)
+    if blockProbe then coroutine.yield() end
+    local url = options.Url
+    if string.sub(url, -5) == "/poll" or string.find(url, "/poll?", 1, true) then
+        if serveCommand then
+            serveCommand = false
+            return { StatusCode = 200, Body = { type = "slow", id = "cmd" } }
+        end
+        return { StatusCode = 204 }
+    end
+    if string.find(url, "/respond", 1, true) then
+        respondCalls += 1
+    end
+    return { StatusCode = 200 }
+end
+
+local function MockConnectWebSocket()
+    local socket = { OnMessage = NewSignal(), OnClose = NewSignal(), closes = 0 }
+    function socket:Send(_message)
+        if failRegistration then error("registration failed") end
+        self.OnMessage:Fire({ type = "registered", clientId = "client" })
+    end
+    function socket:Close()
+        self.closes += 1
+        self.OnClose:Fire()
+    end
+    table.insert(sockets, socket)
+    return socket
+end
+
+local function NewBridgeClient(webSocketAvailable)
+    return BridgeClientFactory({
+        Request = MockRequest,
+        ConnectWebSocket = MockConnectWebSocket,
+        HttpService = {
+            JSONEncode = function(_, value) return value end,
+            JSONDecode = function(_, value) return value end,
+        },
+        BridgeURL = "test",
+        WebSocketAvailable = webSocketAvailable,
+        GetRegistrationInfo = function() return { type = "register" } end,
+        SanitizeForOutput = function(value) return value end,
+        LuaEncode = function(value) return tostring(value) end,
+    })
+end
+
+local wsBridgeClient = NewBridgeClient(true)
+local httpBridgeClient = NewBridgeClient(false)
+
+local function ConnectBridge(client)
+    local bridge
+    local constructor = coroutine.create(function()
+        bridge = client.CreateBridge()
+    end)
+    for _ = 1, 10 do
+        if coroutine.status(constructor) == "dead" then break end
+        assert(coroutine.resume(constructor))
+    end
+    assert(bridge ~= nil, "bridge constructor must finish")
+    return bridge
+end
+
+for _ = 1, 20 do
+    local bridge = ConnectBridge(wsBridgeClient)
+    local socket = bridge.WebSocket
+    local aliveThread = bridge.AliveThread
+    assert(bridge.ClientId == "client", "registration listeners must be installed before sending")
+    bridge:BindToTypeRaw("test", function() return "test" end)
+    socket.OnClose:Fire()
+    assert(coroutine.resume(aliveThread))
+    assert(coroutine.status(aliveThread) == "dead", "disconnected heartbeat must exit")
+    bridge:Destroy()
+    bridge:Destroy()
+    assert(cancelledThreads[aliveThread], "cleanup must cancel the old heartbeat")
+    assert(socket.OnMessage:ActiveCount() == 0 and socket.OnClose:ActiveCount() == 0)
+    assert(bridge.WebSocket == nil and bridge.AliveThread == nil)
+    assert(next(bridge.Callbacks) == nil and next(bridge.RawCallbacks) == nil)
+end
+
+local probingBridge = ConnectBridge(wsBridgeClient)
+blockProbe = true
+assert(coroutine.resume(probingBridge.AliveThread))
+local probeThread = probingBridge.ProbeThread
+assert(probeThread ~= nil, "pending heartbeat requests must be tracked")
+probingBridge:Destroy()
+assert(cancelledThreads[probeThread] and probingBridge.ProbeThread == nil)
+blockProbe = false
+
+failRegistration = true
+local fallbackBridge = ConnectBridge(wsBridgeClient)
+local failedSocket = sockets[#sockets]
+assert(failedSocket.closes > 0, "failed registration must close the abandoned socket")
+assert(failedSocket.OnMessage:ActiveCount() == 0 and failedSocket.OnClose:ActiveCount() == 0)
+assert(fallbackBridge.WebSocket == nil and fallbackBridge.PollThread ~= nil, "failed registration falls back to HTTP")
+local fallbackPoll = fallbackBridge.PollThread
+fallbackBridge:Destroy()
+assert(cancelledThreads[fallbackPoll], "HTTP cleanup must cancel polling")
+failRegistration = false
+
+-- In-flight HTTP commands are tracked and cancelled with the bridge.
+local httpBridge = ConnectBridge(httpBridgeClient)
+local slowStarted = false
+httpBridge:BindToType("slow", function()
+    slowStarted = true
+    coroutine.yield()
+    return "done"
+end)
+httpBridge:BindToType("fast", function() return "fast" end)
+serveCommand = true
+assert(coroutine.resume(httpBridge.PollThread))
+assert(slowStarted, "poll must dispatch the queued command")
+local inFlight = next(httpBridge.CommandThreads)
+assert(inFlight ~= nil, "yielding command threads must be tracked")
+local pollThread = httpBridge.PollThread
+httpBridge:Destroy()
+assert(cancelledThreads[inFlight], "destroy must cancel in-flight command threads")
+assert(cancelledThreads[pollThread], "destroy must cancel the poll loop")
+assert(next(httpBridge.CommandThreads) == nil)
+
+-- A late resume of a cancelled-but-still-running command must not post to /respond.
+local respondBefore = respondCalls
+coroutine.resume(inFlight)
+assert(respondCalls == respondBefore, "a destroyed bridge must not send late responses")
+
+-- Commands that finish without yielding never enter the tracking set.
+local quickBridge = ConnectBridge(httpBridgeClient)
+quickBridge:TrackThread(function() end)
+assert(next(quickBridge.CommandThreads) == nil, "finished commands must not be tracked")
+quickBridge:Destroy()
 
 print("connector module lifecycle tests passed")
