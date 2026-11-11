@@ -18,7 +18,40 @@ end
 assert(type(loadstring) == "function", "This executor needs loadstring to run the MCP connector.")
 assert(Compatibility.Info.available.request, "This executor needs an HTTP request function to connect to MCP.")
 
-local BridgeURL = Environment.BridgeURL or Environment.bridgeurl or ... or "localhost:16384"
+-- Some executors give an autoexec loader and the chunk it loads different global tables,
+-- so a BridgeURL set by the loader can be invisible here. Read settings from a table the
+-- loader passes in first, then every global table, and copy them onto Environment.
+local LoaderSettings = ...
+if type(LoaderSettings) == "string" then
+    LoaderSettings = { BridgeURL = LoaderSettings }
+end
+do
+    local sources = {}
+    if type(LoaderSettings) == "table" then table.insert(sources, LoaderSettings) end
+    table.insert(sources, Environment)
+    for _, getSource in {
+        function() return _G end,
+        function() return shared end,
+        function() return getfenv(0) end,
+    } do
+        local ok, source = pcall(getSource)
+        if ok and type(source) == "table" then table.insert(sources, source) end
+    end
+    for _, name in {
+        "BridgeURL", "bridgeurl", "DisableWebSocket", "DisableInitialScriptDecompMapping",
+        "MCP_ScriptMappingWorkers", "MCP_FailedScriptResyncInterval", "MCP_FailedScriptResyncBatchSize",
+    } do
+        for _, source in sources do
+            local ok, value = pcall(function() return source[name] end)
+            if ok and value ~= nil then
+                Environment[name] = value
+                break
+            end
+        end
+    end
+end
+
+local BridgeURL = Environment.BridgeURL or Environment.bridgeurl or "localhost:16384"
 Environment.BridgeURL = BridgeURL
 Environment.bridgeurl = BridgeURL
 

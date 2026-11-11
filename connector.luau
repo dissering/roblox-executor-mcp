@@ -3582,9 +3582,42 @@ end
 assert(type(loadstring)=="function","This executor needs loadstring to run the MCP connector.")
 assert(b.Info.available.request,"This executor needs an HTTP request function to connect to MCP.")
 
-local e=c.BridgeURL or c.bridgeurl or...or"localhost:16384"
-c.BridgeURL=e
-c.bridgeurl=e
+
+
+
+local e=...
+if type(e)=="string"then
+e={BridgeURL=e}
+end
+do
+local f={}
+if type(e)=="table"then table.insert(f,e)end
+table.insert(f,c)
+for g,h in{
+function()return _G end,
+function()return shared end,
+function()return getfenv(0)end,
+}do
+local i,j=pcall(h)
+if i and type(j)=="table"then table.insert(f,j)end
+end
+for g,h in{
+"BridgeURL","bridgeurl","DisableWebSocket","DisableInitialScriptDecompMapping",
+"MCP_ScriptMappingWorkers","MCP_FailedScriptResyncInterval","MCP_FailedScriptResyncBatchSize",
+}do
+for i,j in f do
+local k,l=pcall(function()return j[h]end)
+if k and l~=nil then
+c[h]=l
+break
+end
+end
+end
+end
+
+local f=c.BridgeURL or c.bridgeurl or"localhost:16384"
+c.BridgeURL=f
+c.bridgeurl=f
 
 
 if not game:IsLoaded()then
@@ -3592,284 +3625,284 @@ game.Loaded:Wait()
 end
 
 
-local f=b.CloneReference
-local function OptionalService(g)
-local h,i=pcall(function()return f(game:GetService(g))end)
-return h and i or nil
+local g=b.CloneReference
+local function OptionalService(h)
+local i,j=pcall(function()return g(game:GetService(h))end)
+return i and j or nil
 end
 
-local g=OptionalService"RobloxReplicatedStorage"
-local h,i=pcall(function()return f(Instance.new"VirtualInputManager")end)
-if not h then i=nil end
-local j:MarketplaceService=f(game:GetService"MarketplaceService")
-local k=OptionalService"CoreGui"
-local l=OptionalService"CorePackages"
-local m=OptionalService"ScriptContext"
-local n:HttpService=f(game:GetService"HttpService")
-local o:LogService=f(game:GetService"LogService")
-local p:Players=f(game:GetService"Players")
+local h=OptionalService"RobloxReplicatedStorage"
+local i,j=pcall(function()return g(Instance.new"VirtualInputManager")end)
+if not i then j=nil end
+local k:MarketplaceService=g(game:GetService"MarketplaceService")
+local l=OptionalService"CoreGui"
+local m=OptionalService"CorePackages"
+local n=OptionalService"ScriptContext"
+local o:HttpService=g(game:GetService"HttpService")
+local p:LogService=g(game:GetService"LogService")
+local q:Players=g(game:GetService"Players")
 
 
 
-local q
+local r
 do
 
 
 
 
-local r='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+local s='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 
 
-q=base64encode or function(s)
-return((s:gsub('.',function(t)
-local u,v='',t:byte()
-for w=8,1,-1 do u=u..(v%2^w-v%2^(w-1)>0 and'1'or'0')end
-return u
-end)..'0000'):gsub('%d%d%d?%d?%d?%d?',function(t)
-if(#t<6)then return''end
-local u=0
-for v=1,6 do u=u+(t:sub(v,v)=='1'and 2^(6-v)or 0)end
-return r:sub(u+1,u+1)
-end)..({'','==','='})[#s%3+1])
+r=base64encode or function(t)
+return((t:gsub('.',function(u)
+local v,w='',u:byte()
+for x=8,1,-1 do v=v..(w%2^x-w%2^(x-1)>0 and'1'or'0')end
+return v
+end)..'0000'):gsub('%d%d%d?%d?%d?%d?',function(u)
+if(#u<6)then return''end
+local v=0
+for w=1,6 do v=v+(u:sub(w,w)=='1'and 2^(6-w)or 0)end
+return s:sub(v+1,v+1)
+end)..({'','==','='})[#t%3+1])
 end
 end
 
 
 
-local r=type(getscripthash)=="function"and getscripthash or nil
-local s=type(decompile)=="function"and decompile or nil
+local s=type(getscripthash)=="function"and getscripthash or nil
+local t=type(decompile)=="function"and decompile or nil
 
-local t=b.Request{
+local u=b.Request{
 Url="https://raw.githubusercontent.com/chadhyatt/LuaEncode/refs/heads/master/src/LuaEncode.lua",
 Method="GET",
 }
-assert(t.StatusCode==200 and type(t.Body)=="string","Unable to download the connector serializer.")
-local u,v=loadstring(t.Body)
-assert(u,v)
-local w=u()
+assert(u.StatusCode==200 and type(u.Body)=="string","Unable to download the connector serializer.")
+local v,w=loadstring(u.Body)
+assert(v,w)
+local x=v()
 
 
 
 
-local x=8
-local y=60
-local z=500
+local y=8
+local z=60
+local A=500
 
-local function SanitizeForOutput(A,B,C)
-B=B or 0
-local D=typeof(A)
+local function SanitizeForOutput(B,C,D)
+C=C or 0
+local E=typeof(B)
 
-if D=="Instance"then
-local E,F=pcall(function()return A:GetFullName()end)
-return E and F or tostring(A)
-elseif D=="string"then
-if#A>z then
-return string.sub(A,1,z)
-.."…(+"..(#A-z).." chars omitted)"
+if E=="Instance"then
+local F,G=pcall(function()return B:GetFullName()end)
+return F and G or tostring(B)
+elseif E=="string"then
+if#B>A then
+return string.sub(B,1,A)
+.."…(+"..(#B-A).." chars omitted)"
 end
-return A
-elseif D=="number"or D=="boolean"or D=="nil"then
-return A
-elseif D~="table"then
+return B
+elseif E=="number"or E=="boolean"or E=="nil"then
+return B
+elseif E~="table"then
 
-return tostring(A)
+return tostring(B)
 end
 
-if B>=x then
+if C>=y then
 return"<table: max depth reached>"
 end
 
-C=C or{}
-if C[A]then
+D=D or{}
+if D[B]then
 return"<cyclic table>"
 end
-C[A]=true
+D[B]=true
 
-local E={}
-local F=0
+local F={}
 local G=0
-for H,I in pairs(A)do
-if F>=y then
-G+=1
+local H=0
+for I,J in pairs(B)do
+if G>=z then
+H+=1
 continue
 end
-F+=1
-local J=H
-if typeof(H)~="string"and typeof(H)~="number"then
-J=tostring(H)
+G+=1
+local K=I
+if typeof(I)~="string"and typeof(I)~="number"then
+K=tostring(I)
 end
-E[J]=SanitizeForOutput(I,B+1,C)
+F[K]=SanitizeForOutput(J,C+1,D)
 end
-if G>0 then
-E.__omitted=G.." more entries omitted"
-end
-
-C[A]=nil
-return E
+if H>0 then
+F.__omitted=H.." more entries omitted"
 end
 
-
-
-local function StripDecompilerBanner(A)
-if typeof(A)~="string"then return A end
-return(string.gsub(A,"^%s*%-%-[^\n]*[Dd]ecompiled[^\n]*\n","",1))
+D[B]=nil
+return F
 end
 
-local A=b.GetNilInstances
 
 
-local B=b.ConnectWebSocket~=nil and c.DisableWebSocket~=true
+local function StripDecompilerBanner(B)
+if typeof(B)~="string"then return B end
+return(string.gsub(B,"^%s*%-%-[^\n]*[Dd]ecompiled[^\n]*\n","",1))
+end
+
+local B=b.GetNilInstances
+
+
+local C=b.ConnectWebSocket~=nil and c.DisableWebSocket~=true
 
 
 local function GenerateSessionGuid()
-local C,D=pcall(function()
-return n:GenerateGUID(false)
+local D,E=pcall(function()
+return o:GenerateGUID(false)
 end)
-if C and type(D)=="string"and D~=""then
-return D
+if D and type(E)=="string"and E~=""then
+return E
 end
 return tostring(os.clock()).."-"..tostring(math.random(1,1000000000))
 end
 
 local function GetClientIdentityKey()
-local C=p.LocalPlayer
+local D=q.LocalPlayer
 return table.concat({
 tostring(game.PlaceId or 0),
 tostring(game.JobId or""),
-tostring(C and C.UserId or 0),
+tostring(D and D.UserId or 0),
 },":")
 end
 
 local function GetStableClientSessionId()
-local C=GetClientIdentityKey()
-if type(c.MCP_ClientSessionId)~="string"or c.MCP_ClientIdentityKey~=C then
+local D=GetClientIdentityKey()
+if type(c.MCP_ClientSessionId)~="string"or c.MCP_ClientIdentityKey~=D then
 c.MCP_ClientSessionId=GenerateSessionGuid()
-c.MCP_ClientIdentityKey=C
+c.MCP_ClientIdentityKey=D
 end
 return c.MCP_ClientSessionId
 end
 
 local function GetRegistrationInfo()
-local C=p.LocalPlayer
-local D="Unknown"
+local D=q.LocalPlayer
+local E="Unknown"
 pcall(function()
-local E=j:GetProductInfo(game.PlaceId)
-D=E.Name
+local F=k:GetProductInfo(game.PlaceId)
+E=F.Name
 end)
 return{
 type="register",
-username=C and C.Name or"Unknown",
-userId=C and C.UserId or 0,
+username=D and D.Name or"Unknown",
+userId=D and D.UserId or 0,
 placeId=game.PlaceId,
 jobId=game.JobId,
-placeName=D,
+placeName=E,
 sessionId=GetStableClientSessionId(),
 }
 end
 
 
-local C=a.b(){
+local D=a.b(){
 Request=b.Request,
 ConnectWebSocket=b.ConnectWebSocket,
-HttpService=n,
-BridgeURL=e,
-WebSocketAvailable=B,
+HttpService=o,
+BridgeURL=f,
+WebSocketAvailable=C,
 GetRegistrationInfo=GetRegistrationInfo,
 SanitizeForOutput=SanitizeForOutput,
-LuaEncode=w,
+LuaEncode=x,
 }
-local D=C.CreateBridge
+local E=D.CreateBridge
 
 
-local E=a.c()
-local F=a.d()
-local G=a.e()
-local H=a.f()
-local I=a.g()
-local J=F.new()
-local K=math.max(
+local F=a.c()
+local G=a.d()
+local H=a.e()
+local I=a.f()
+local J=a.g()
+local K=G.new()
+local L=math.max(
 1,
 math.min(math.floor(tonumber(c.MCP_ScriptMappingWorkers)or 24),64)
 )
-local L=a.h().new(
-J,
-K
+local M=a.h().new(
+K,
+L
 )
-local M=math.max(
+local N=math.max(
 5,
 math.min(tonumber(c.MCP_FailedScriptResyncInterval)or 30,600)
 )
-local N=a.i().new(J,{
-IntervalSeconds=M,
-MaxDelaySeconds=math.max(M,300),
+local O=a.i().new(K,{
+IntervalSeconds=N,
+MaxDelaySeconds=math.max(N,300),
 BatchSize=math.max(
 1,
 math.min(math.floor(tonumber(c.MCP_FailedScriptResyncBatchSize)or 8),32)
 ),
 })
-local O=a.j().new(
-J,
-N
+local P=a.j().new(
+K,
+O
 )
-local P=a.k(){
+local Q=a.k(){
 Request=b.Request,
-ScriptMappingPipeline=J,
-HttpService=n,
-BridgeURL=e,
-JobStatus=O,
+ScriptMappingPipeline=K,
+HttpService=o,
+BridgeURL=f,
+JobStatus=P,
 }
-local Q=a.l(){
+local R=a.l(){
 Request=b.Request,
-ScriptMappingPipeline=J,
-HttpService=n,
-BridgeURL=e,
+ScriptMappingPipeline=K,
+HttpService=o,
+BridgeURL=f,
 StripDecompilerBanner=StripDecompilerBanner,
-base64_encode=q,
-BuiltInDecompile=s,
-GetScriptHash=r,
-DecompilerAttemptState=H,
-PreparedScript=I,
-Concurrency=L,
+base64_encode=r,
+BuiltInDecompile=t,
+GetScriptHash=s,
+DecompilerAttemptState=I,
+PreparedScript=J,
+Concurrency=M,
 }
-local R=a.m(){
-ScriptMappingPipeline=J,
-WorkerPool=E,
-UploadSession=G,
+local S=a.m(){
+ScriptMappingPipeline=K,
+WorkerPool=F,
+UploadSession=H,
 GenerateSessionGuid=GenerateSessionGuid,
-CoreGui=k,
-CorePackages=l,
-ScriptContext=m,
-getnilinstances=A,
-WorkerCount=K,
-Concurrency=L,
-JobStatus=O,
-FailedResync=N,
-UploadClient=P,
-DecompilerClient=Q,
+CoreGui=l,
+CorePackages=m,
+ScriptContext=n,
+getnilinstances=B,
+WorkerCount=L,
+Concurrency=M,
+JobStatus=P,
+FailedResync=O,
+UploadClient=Q,
+DecompilerClient=R,
 }
-local S=P.StartUploadQueue
+local T=Q.StartUploadQueue
 local function PublishScriptMappingStatus()
-O:Publish()
+P:Publish()
 end
-local T=R.StartScriptMapping
-local U=R.StartFailedScriptResync
-local V=R.ResetScriptMappingState
-local W=R.ResumeDeferredScriptMappings
-local X=R.GetScriptByDebugId
-local Y=R.QueueMappedScriptSource
-local Z=R.DecompileScriptSource
+local U=S.StartScriptMapping
+local V=S.StartFailedScriptResync
+local W=S.ResetScriptMappingState
+local X=S.ResumeDeferredScriptMappings
+local Y=S.GetScriptByDebugId
+local Z=S.QueueMappedScriptSource
+local aa=S.DecompileScriptSource
 
-local function WaitForBridgeClientId(aa)
-local ab=os.clock()+5
+local function WaitForBridgeClientId(ab)
+local ac=os.clock()+5
 repeat
-if aa.ClientId then
-return aa.ClientId
+if ab.ClientId then
+return ab.ClientId
 end
-if not aa.Connected then
+if not ab.Connected then
 return nil
 end
 task.wait(0.05)
-until os.clock()>ab
+until os.clock()>ac
 
 return nil
 end
@@ -3878,22 +3911,22 @@ c.MCP_Loaded=true a.u()
 {
 Compatibility=b,
 Environment=c,
-CreateBridge=D,
+CreateBridge=E,
 WaitForBridgeClientId=WaitForBridgeClientId,
 IsCurrentConnector=IsCurrentConnector,
-ScriptMappingPipeline=J,
-StartUploadQueue=S,
+ScriptMappingPipeline=K,
+StartUploadQueue=T,
 PublishScriptMappingStatus=PublishScriptMappingStatus,
-ResetScriptMappingState=V,
-StartScriptMapping=T,
-StartFailedScriptResync=U,
-ResumeDeferredScriptMappings=W,
-GetScriptByDebugId=X,
-DecompileScriptSource=Z,
-QueueMappedScriptSource=Y,
-LogService=o,
-MarketplaceService=j,
-RobloxReplicatedStorage=g,
-VirtualInputManager=i,
-LuaEncode=w,
+ResetScriptMappingState=W,
+StartScriptMapping=U,
+StartFailedScriptResync=V,
+ResumeDeferredScriptMappings=X,
+GetScriptByDebugId=Y,
+DecompileScriptSource=aa,
+QueueMappedScriptSource=Z,
+LogService=p,
+MarketplaceService=k,
+RobloxReplicatedStorage=h,
+VirtualInputManager=j,
+LuaEncode=x,
 }
