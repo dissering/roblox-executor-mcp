@@ -54,7 +54,7 @@ function Compat.new(runtime)
         end
     end
 
-    local api = { Environment = environment, Info = info, ConnectWebSocket = connectWebSocket }
+    local api = { Environment = environment, Info = info, ConnectWebSocket = connectWebSocket, Lookup = lookup }
 
     function api.Request(options)
         assert(requestFunction, "This executor needs request, http_request, syn.request or http.request to connect to MCP.")

@@ -54,7 +54,7 @@ k.version=tostring(o or"")
 end
 end
 
-local m={Environment=d,Info=k,ConnectWebSocket=j}
+local m={Environment=d,Info=k,ConnectWebSocket=j,Lookup=lookup}
 
 function m.Request(n)
 assert(f,"This executor needs request, http_request, syn.request or http.request to connect to MCP.")
@@ -2714,277 +2714,615 @@ return p
 end)
 end end function a.p():typeof(__modImpl())local b=a.cache.p if not b then b={c=__modImpl()}a.cache.p=b end return b.c end end do local function __modImpl()
 
-return function(b,c)
-local d=b.Environment
-c:BindToType("ensure-remote-spy",function(e)
-if d.Cobalt then
-return{
-status="already_loaded",
-message="Cobalt remote spy is already running."
+
+
+
+
+
+
+
+
+
+
+local b={}
+b.__index=b
+
+local c={
+RemoteEvent="FireServer",
+UnreliableRemoteEvent="FireServer",
+RemoteFunction="InvokeServer",
+BindableEvent="Fire",
+BindableFunction="Invoke",
 }
-end
+local d={BindableEvent=true,BindableFunction=true}
+local e={RemoteEvent=true,UnreliableRemoteEvent=true}
+local f={FireServer=true,InvokeServer=true,Fire=true,Invoke=true}
 
+local g=50
+local h=1000
 
-b.Compatibility.RequireRemoteSpySupport()
-local f,g=pcall(function()
-loadstring(b.Compatibility.HttpGet"https://github.com/notpoiu/cobalt/releases/latest/download/Cobalt.luau")()
-end)
-
-if not f then
-error("Failed to load Cobalt: "..tostring(g))
-end
-
-
-local h=os.clock()
-while not d.Cobalt and os.clock()-h<10 do
-task.wait(0.1)
-end
-
-assert(d.Cobalt,"Cobalt loaded but failed to initialize within 10 seconds.")
-
-return{
-status="loaded",
-message="Cobalt remote spy loaded successfully."
-}
-end)
-
-c:BindToType("get-remote-spy-logs",function(e)
-local f=d.Cobalt
-assert(f and f.shared and f.shared.Logs,"Cobalt remote spy is not loaded. Call ensure-remote-spy first.")
-
-local g=e.direction or"Both"
-local h=e.remoteNameFilter or""
-local i=math.max(1,math.min(tonumber(e.limit)or 10,100))
-local j=math.max(0,math.min(tonumber(e.maxCallsPerRemote)or 2,20))
-local k=e.summaryOnly==true
-local l=h~=""
-
-local function ProcessLogs(m,n)
-local o={}
-
-for p,q in m do
-if typeof(p)~="Instance"then continue end
-if#o>=i then break end
-
-local r=""
-local s=""
-pcall(function()
-r=p.Name
-s=p.ClassName
-end)
-
-
-if l and not string.find(string.lower(r),string.lower(h),1,true)then
-continue
-end
-
-
-local t={}
-local u=#q.Calls
-local v=math.max(1,u-j+1)
-
-if not k then
-for w=v,u do
-local x=q.Calls[w]
-if not x then continue end
-
-table.insert(t,{
-Index=w,
-Arguments=x.Arguments,
-Origin=x.Origin,
-IsExecutor=x.IsExecutor or false,
-IsActor=x.IsActor or false,
-Line=x.Line,
-})
-end
-end
-
-table.insert(o,{
-RemoteName=r,
-RemoteClass=s,
-Direction=n,
-Method=q.Method,
-TotalCalls=u,
-Ignored=q.Ignored,
-Blocked=q.Blocked,
-RecentCalls=if k then nil else t,
-})
-end
-
-return o
-end
-
-local m={}
-
-if g=="Outgoing"or g=="Both"then
-local n=ProcessLogs(f.shared.Logs.Outgoing,"Outgoing")
-for o,p in n do
-table.insert(m,p)
-end
-end
-
-if g=="Incoming"or g=="Both"then
-local n=ProcessLogs(f.shared.Logs.Incoming,"Incoming")
-for o,p in n do
-table.insert(m,p)
-end
-end
-
-
-table.sort(m,function(n,o)
-return n.TotalCalls>o.TotalCalls
-end)
-
-
-if#m>i then
-local n={}
-for o=1,i do
-n[o]=m[o]
-end
-m=n
-end
-
-return{
-count=#m,
-results=m
-}
-end)
-end end function a.q():typeof(__modImpl())local b=a.cache.q if not b then b={c=__modImpl()}a.cache.q=b end return b.c end end do local function __modImpl()
-
-return function(b,c)
-local d=b.Environment
-c:BindToType("clear-remote-spy-logs",function(e)
-local f=d.Cobalt
-assert(f and f.shared and f.shared.ClearLogs,"Cobalt remote spy is not loaded. Call ensure-remote-spy first.")
-
-f.shared.ClearLogs()
-
-return{
-status="cleared",
-message="All remote spy logs have been cleared."
-}
-end)
-
-c:BindToType("block-remote",function(e)
-local f=d.Cobalt
-assert(f and f.shared and f.shared.Logs,"Cobalt remote spy is not loaded. Call ensure-remote-spy first.")
-
-local g=e.remoteName
-local h=e.direction
-local i=e.shouldBlock
-
-local j=f.shared.Logs[h]
-assert(j,"Invalid direction: "..tostring(h))
-
-for k,l in j do
-if typeof(k)~="Instance"then continue end
-
-local m=""
-pcall(function()m=k.Name end)
-
-if m==g then
-if i and not l.Blocked then
-l:Block()
-elseif not i and l.Blocked then
-l:Block()
-end
-
-return{
-status="success",
-message=(i and"Blocked"or"Unblocked").." remote: "..g,
-blocked=l.Blocked
-}
-end
-end
-
-error("Remote not found: "..g.." in "..h.." logs. Make sure the remote has been logged at least once.")
-end)
-
-c:BindToType("ignore-remote",function(e)
-local f=d.Cobalt
-assert(f and f.shared and f.shared.Logs,"Cobalt remote spy is not loaded. Call ensure-remote-spy first.")
-
-local g=e.remoteName
-local h=e.direction
-local i=e.shouldIgnore
-
-local j=f.shared.Logs[h]
-assert(j,"Invalid direction: "..tostring(h))
-
-for k,l in j do
-if typeof(k)~="Instance"then continue end
-
-local m=""
-pcall(function()m=k.Name end)
-
-if m==g then
-if i and not l.Ignored then
-l:Ignore()
-elseif not i and l.Ignored then
-l:Ignore()
-end
-
-return{
-status="success",
-message=(i and"Ignoring"or"Unignored").." remote: "..g,
-ignored=l.Ignored
-}
-end
-end
-
-error("Remote not found: "..g.." in "..h.." logs. Make sure the remote has been logged at least once.")
-end)
-
-
-
-
-c:BindToType("remote-spy",function(e)
-c.Callbacks["ensure-remote-spy"]{}
-
-local f=e.operation
-if f=="status"then
-local g=d.Cobalt
-local function CountLogs(h)
-local i=0
-if typeof(h)~="table"then return i end
-for j in h do
-i+=1
-end
+local function identity(i)
 return i
 end
 
-return{
-status="loaded",
-outgoingRemotes=CountLogs(g.shared and g.shared.Logs and g.shared.Logs.Outgoing),
-incomingRemotes=CountLogs(g.shared and g.shared.Logs and g.shared.Logs.Incoming),
+local function newDirectionTable()
+return{Outgoing={},Incoming={}}
+end
+
+function b.new(i)
+local j=setmetatable({},b)
+j.Lookup=i.Lookup
+j.Game=i.Game
+j.InstanceNew=i.InstanceNew
+j.TypeOf=i.TypeOf or typeof
+j.Clock=i.Clock or os.clock
+j.Encode=i.LuaEncode
+
+j.Enabled=true
+j.IncludeBindables=false
+j.IncludeExecutorCalls=false
+
+j.Logs=newDirectionTable()
+j.RemoteCounts={Outgoing=0,Incoming=0}
+j.BlockRules=newDirectionTable()
+j.IgnoreRules=newDirectionTable()
+
+j.OutgoingMode="unavailable"
+j.FunctionHooks=0
+j.IncomingMode="unavailable"
+j.Watched=setmetatable({},{__mode="k"})
+j.WatchedCount=0
+j.InNamecall=setmetatable({},{__mode="k"})
+j.Notes={}
+return j
+end
+
+function b.SafeIndex(i,j,k)
+local l,m=pcall(function()
+return j[k]
+end)
+if l then return m end
+return nil
+end
+
+function b.IsTarget(i,j,k)
+if i.TypeOf(j)~="Instance"then return false end
+local l=i:SafeIndex(j,"ClassName")
+if c[l]~=k then return false end
+if d[l]and not i.IncludeBindables then return false end
+return true
+end
+
+
+function b.Record(i,j,k,l,m,n)
+if not i.Enabled then return false end
+local o=i:SafeIndex(j,"Name")or"?"
+local p=i.BlockRules[k][o]==true
+if i.IgnoreRules[k][o]then return p end
+
+local q=i.Logs[k]
+local r=q[j]
+if not r then
+if i.RemoteCounts[k]>=h then return p end
+r={
+Instance=j,
+Name=o,
+ClassName=i:SafeIndex(j,"ClassName")or"?",
+Direction=k,
+Method=l,
+Calls={},
+Head=0,
+TotalCalls=0,
+FirstSeen=i.Clock(),
 }
-elseif f=="list"then
-return c.Callbacks["get-remote-spy-logs"]{
+q[j]=r
+i.RemoteCounts[k]+=1
+end
+
+r.Name=o
+r.TotalCalls+=1
+r.LastSeen=i.Clock()
+r.Head=r.Head%g+1
+r.Calls[r.Head]={
+Number=r.TotalCalls,
+Arguments=m,
+Time=r.LastSeen,
+Script=n and n.Script or nil,
+IsExecutor=n and n.IsExecutor or false,
+Blocked=p,
+}
+return p
+end
+
+
+function b.RecentCalls(i,j,k)
+local l=math.min(j.TotalCalls,g)
+k=math.min(k,l)
+local m={}
+for n=k-1,0,-1 do
+local o=(j.Head-n-1)%g+1
+table.insert(m,j.Calls[o])
+end
+return m
+end
+
+function b.CallMeta(i)
+local j=i.Lookup"checkcaller"
+local k=i.Lookup"getcallingscript"
+local l=false
+if type(j)=="function"then
+local m,n=pcall(j)
+l=m and n==true
+end
+local m
+if type(k)=="function"then
+local n,o=pcall(k)
+if n and i.TypeOf(o)=="Instance"then m=o end
+end
+return{IsExecutor=l,Script=m}
+end
+
+
+function b.InterceptOutgoing(i,j,k,...)
+if not i.Enabled or not i:IsTarget(j,k)then return false end
+local l=i:CallMeta()
+
+if l.IsExecutor and not i.IncludeExecutorCalls then return false end
+return i:Record(j,"Outgoing",k,table.pack(...),l)
+end
+
+function b.InstallNamecallHook(i)
+local j=i.Lookup"getnamecallmethod"
+if type(j)~="function"then
+table.insert(i.Notes,"getnamecallmethod is missing, so remote:FireServer() calls cannot be intercepted through __namecall.")
+return false
+end
+local k=i.Lookup"newcclosure"
+if type(k)~="function"then k=identity end
+local l=i
+local m
+
+local function handler(n,...)
+local o=j()
+if not f[o]or not l.Enabled then
+return m(n,...)
+end
+if l:InterceptOutgoing(n,o,...)then
+return nil
+end
+
+local p=coroutine.running()
+l.InNamecall[p]=true
+local q=table.pack(m(n,...))
+l.InNamecall[p]=nil
+return table.unpack(q,1,q.n)
+end
+
+local n=i.Lookup"hookmetamethod"
+if type(n)=="function"then
+local o,p=pcall(n,i.Game,"__namecall",k(handler))
+if o and type(p)=="function"then
+m=p
+i.OutgoingMode="namecall-hook"
+return true
+end
+table.insert(i.Notes,"hookmetamethod failed: "..tostring(p))
+end
+
+local o=i.Lookup"getrawmetatable"
+if type(o)=="function"then
+local p,q=pcall(function()
+local p=o(i.Game)
+local q=i.Lookup"setreadonly"
+local r=i.Lookup"make_writeable"
+m=p.__namecall
+assert(type(m)=="function","game has no __namecall")
+if type(q)=="function"then
+q(p,false)
+elseif type(r)=="function"then
+r(p)
+end
+p.__namecall=k(handler)
+if type(q)=="function"then pcall(q,p,true)end
+end)
+if p then
+i.OutgoingMode="metatable"
+return true
+end
+table.insert(i.Notes,"raw metatable namecall swap failed: "..tostring(q))
+end
+return false
+end
+
+function b.InstallFunctionHooks(i)
+local j=i.Lookup"hookfunction"or i.Lookup"replaceclosure"or i.Lookup"detour_function"
+if type(j)~="function"then
+table.insert(i.Notes,"hookfunction is missing, so direct remote.FireServer(remote) calls are not intercepted.")
+return false
+end
+local k=i.Lookup"newcclosure"
+if type(k)~="function"then k=identity end
+local l=i
+local m={}
+
+for n,o in c do
+local p,q=pcall(function()
+return i.InstanceNew(n)[o]
+end)
+if not p or type(q)~="function"or m[q]then continue end
+m[q]=true
+
+local r
+local s,t=pcall(j,q,k(function(s,...)
+if l.Enabled and not l.InNamecall[coroutine.running()]then
+if l:InterceptOutgoing(s,o,...)then
+return nil
+end
+end
+return r(s,...)
+end))
+if s and type(t)=="function"then
+r=t
+i.FunctionHooks+=1
+else
+table.insert(i.Notes,"hookfunction failed on "..n.."."..o..": "..tostring(t))
+end
+end
+return i.FunctionHooks>0
+end
+
+function b.ApplyIncomingBlock(i,j)
+local k=i.Watched[j]
+local l=i.Lookup"getconnections"
+if not k or type(l)~="function"then return false end
+local m=i:SafeIndex(j,"Name")or"?"
+local n=i.BlockRules.Incoming[m]==true
+local o=pcall(function()
+for o,p in l(j.OnClientEvent)do
+if p.Function==k.Handler then continue end
+if n then
+p:Disable()
+else
+p:Enable()
+end
+end
+end)
+return o
+end
+
+function b.Watch(i,j)
+if i.Watched[j]then return end
+local k=i:SafeIndex(j,"ClassName")
+if not e[k]then return end
+
+local l=i
+local m={}
+m.Handler=function(...)
+if l:Record(j,"Incoming","OnClientEvent",table.pack(...),nil)then
+
+l:ApplyIncomingBlock(j)
+end
+end
+local n,o=pcall(function()
+return j.OnClientEvent:Connect(m.Handler)
+end)
+if not n then return end
+m.Connection=o
+i.Watched[j]=m
+i.WatchedCount+=1
+if i.BlockRules.Incoming[i:SafeIndex(j,"Name")or"?"]then
+i:ApplyIncomingBlock(j)
+end
+end
+
+function b.InstallIncoming(i)
+local j=i
+local k=pcall(function()
+i.DescendantConnection=i.Game.DescendantAdded:Connect(function(k)
+j:Watch(k)
+end)
+end)
+local l=pcall(function()
+for l,m in i.Game:GetDescendants()do
+j:Watch(m)
+end
+end)
+local m=i.Lookup"getnilinstances"
+if type(m)=="function"then
+pcall(function()
+for n,o in m()do
+j:Watch(o)
+end
+end)
+end
+if k or l then
+i.IncomingMode="connections"
+return true
+end
+table.insert(i.Notes,"Could not scan the game for RemoteEvents.")
+return false
+end
+
+function b.Start(i)
+if i.Started then return i end
+i.Started=true
+local j=i:InstallNamecallHook()
+local k=i:InstallFunctionHooks()
+if not j and k then
+i.OutgoingMode="function-hook"
+end
+i:InstallIncoming()
+return i
+end
+
+
+function b.SetRule(i,j,k,l,m)
+local n=(j=="block"and i.BlockRules or i.IgnoreRules)[k]
+assert(n,"Invalid direction: "..tostring(k).." (use Incoming or Outgoing)")
+assert(type(l)=="string"and l~="","remoteName is required")
+n[l]=m or nil
+
+local o=0
+for p,q in i.Logs[k]do
+if q.Name==l then o+=1 end
+end
+local p=true
+if j=="block"and k=="Incoming"then
+for q in i.Watched do
+if i:SafeIndex(q,"Name")==l then
+p=i:ApplyIncomingBlock(q)and p
+end
+end
+end
+return o,p
+end
+
+function b.Clear(i)
+i.Logs=newDirectionTable()
+i.RemoteCounts={Outgoing=0,Incoming=0}
+end
+
+local function formatIndex(i)
+if string.match(i,"^[%a_][%w_]*$")then
+return"."..i
+end
+return"["..string.format("%q",i).."]"
+end
+
+function b.PathOf(i,j)
+local k={}
+local l=j
+for m=1,200 do
+local n=i:SafeIndex(l,"Parent")
+if n==nil then
+return nil
+end
+if n==i.Game then
+local o=i:SafeIndex(l,"ClassName")or"Workspace"
+table.insert(k,1,string.format("game:GetService(%q)",o))
+return table.concat(k)
+end
+table.insert(k,1,formatIndex(i:SafeIndex(l,"Name")or"?"))
+l=n
+end
+return nil
+end
+
+function b.ReplayFor(i,j,k)
+local l=i:PathOf(j.Instance)
+if not l then
+return"-- "..j.Name.." is parented to nil; find it with getnilinstances() first."
+end
+local m=k.Arguments
+local n={}
+for o=1,m.n or#m do
+n[o]=m[o]
+end
+local o,p=pcall(i.Encode,n,{Prettify=false})
+if not o then
+p="{} -- arguments could not be serialized: "..tostring(p)
+end
+local q=m.n or#m
+if j.Direction=="Incoming"then
+return string.format(
+"local args = %s\nfiresignal(%s.OnClientEvent, table.unpack(args, 1, %d))",
+p,l,q
+)
+end
+return string.format(
+"local args = %s\n%s:%s(table.unpack(args, 1, %d))",
+p,l,j.Method,q
+)
+end
+
+function b.Status(i)
+local j=i.Lookup"getconnections"
+local k,l={},{}
+for m in i.BlockRules.Outgoing do table.insert(k,"block "..m)end
+for m in i.IgnoreRules.Outgoing do table.insert(k,"ignore "..m)end
+for m in i.BlockRules.Incoming do table.insert(l,"block "..m)end
+for m in i.IgnoreRules.Incoming do table.insert(l,"ignore "..m)end
+return{
+status="running",
+enabled=i.Enabled,
+outgoing=i.OutgoingMode,
+outgoingFunctionHooks=i.FunctionHooks,
+outgoingBlocking=i.OutgoingMode~="unavailable",
+incoming=i.IncomingMode,
+incomingBlocking=type(j)=="function",
+remoteEventsWatched=i.WatchedCount,
+outgoingRemotes=i.RemoteCounts.Outgoing,
+incomingRemotes=i.RemoteCounts.Incoming,
+includeBindables=i.IncludeBindables,
+includeExecutorCalls=i.IncludeExecutorCalls,
+outgoingRules=k,
+incomingRules=l,
+notes=i.Notes,
+}
+end
+
+function b.List(i,j)
+local k=j.direction or"Both"
+local l=string.lower(j.nameFilter or"")
+local m=math.clamp(math.floor(tonumber(j.limit)or 10),1,100)
+local n=math.clamp(math.floor(tonumber(j.maxCallsPerRemote)or 2),0,20)
+local o=j.summaryOnly==true
+
+local p={}
+for q,r in{"Outgoing","Incoming"}do
+if k~="Both"and k~=r then continue end
+for s,t in i.Logs[r]do
+if l~=""and not string.find(string.lower(t.Name),l,1,true)then continue end
+table.insert(p,t)
+end
+end
+table.sort(p,function(q,r)
+if q.TotalCalls~=r.TotalCalls then return q.TotalCalls>r.TotalCalls end
+return q.Name<r.Name
+end)
+
+local q={}
+for r=1,math.min(m,#p)do
+local s=p[r]
+local t={
+RemoteName=s.Name,
+RemoteClass=s.ClassName,
+Path=i:PathOf(s.Instance),
+Direction=s.Direction,
+Method=s.Method,
+TotalCalls=s.TotalCalls,
+Blocked=i.BlockRules[s.Direction][s.Name]==true,
+Ignored=i.IgnoreRules[s.Direction][s.Name]==true,
+}
+if not o and n>0 then
+local u={}
+for v,w in i:RecentCalls(s,n)do
+local x={}
+for y=1,w.Arguments.n or#w.Arguments do
+x[y]=w.Arguments[y]
+end
+table.insert(u,{
+Number=w.Number,
+Arguments=x,
+ArgumentCount=w.Arguments.n,
+Script=w.Script and(i:PathOf(w.Script)or i:SafeIndex(w.Script,"Name"))or nil,
+IsExecutor=w.IsExecutor,
+Blocked=w.Blocked,
+SecondsAgo=math.floor((i.Clock()-w.Time)*10)/10,
+Replay=i:ReplayFor(s,w),
+})
+end
+t.RecentCalls=u
+end
+table.insert(q,t)
+end
+return{count=#q,totalMatching=#p,results=q}
+end
+
+
+
+function b.Get(i)
+local j=i.Environment
+local k=j.MCP_RemoteSpy
+if type(k)=="table"and type(k.List)=="function"then
+return k
+end
+local l=b.new{
+Lookup=i.Compatibility.Lookup,
+Game=game,
+InstanceNew=Instance.new,
+LuaEncode=i.LuaEncode,
+}
+l:Start()
+j.MCP_RemoteSpy=l
+return l
+end
+
+return b end function a.q():typeof(__modImpl())local b=a.cache.q if not b then b={c=__modImpl()}a.cache.q=b end return b.c end end do local function __modImpl()
+
+local b=a.q()
+
+return function(c,d)
+d:BindToType("ensure-remote-spy",function()
+local e=type(c.Environment.MCP_RemoteSpy)=="table"
+local f=b.Get(c)
+local g=f:Status()
+g.status=e and"already_running"or"started"
+return g
+end)
+
+d:BindToType("get-remote-spy-logs",function(e)
+return b.Get(c):List{
 direction=e.direction,
-remoteNameFilter=e.nameFilter,
+nameFilter=e.remoteNameFilter or e.nameFilter,
 limit=e.limit,
 maxCallsPerRemote=e.maxCallsPerRemote,
 summaryOnly=e.summaryOnly,
 }
-elseif f=="clear"then
-return c.Callbacks["clear-remote-spy-logs"]{}
-elseif f=="block"or f=="unblock"then
-return c.Callbacks["block-remote"]{
-remoteName=e.remoteName,
-direction=e.direction,
-shouldBlock=f=="block",
-}
-elseif f=="ignore"or f=="unignore"then
-return c.Callbacks["ignore-remote"]{
-remoteName=e.remoteName,
-direction=e.direction,
-shouldIgnore=f=="ignore",
-}
-end
-
-error("Invalid remote-spy operation: "..tostring(f))
 end)
 end end function a.r():typeof(__modImpl())local b=a.cache.r if not b then b={c=__modImpl()}a.cache.r=b end return b.c end end do local function __modImpl()
+
+local b=a.q()
+
+return function(c,d)
+local function SetRule(e,f,g)
+local h=b.Get(c)
+local i,j=h:SetRule(e,f.direction,f.remoteName,g)
+local k=if e=="block"
+then(g and"Blocked"or"Unblocked")
+else(g and"Ignoring"or"Unignored")
+local l={
+status="success",
+message=string.format("%s %s remote %q. Matches %d logged remote(s); the rule also applies to remotes that have not fired yet.",
+k,f.direction,f.remoteName,i),
+matchedRemotes=i,
+}
+if e=="block"and f.direction=="Outgoing"and h.OutgoingMode=="unavailable"then
+l.warning="Outgoing calls cannot be intercepted on this executor, so this block has no effect."
+elseif e=="block"and f.direction=="Incoming"and not j then
+l.warning="Blocking incoming events needs getconnections, which this executor lacks. Events are still logged."
+end
+return l
+end
+
+d:BindToType("clear-remote-spy-logs",function()
+b.Get(c):Clear()
+return{status="cleared",message="All remote spy logs have been cleared. Block and ignore rules are kept."}
+end)
+
+d:BindToType("block-remote",function(e)
+return SetRule("block",e,e.shouldBlock~=false)
+end)
+
+d:BindToType("ignore-remote",function(e)
+return SetRule("ignore",e,e.shouldIgnore~=false)
+end)
+
+d:BindToType("remote-spy",function(e)
+local f=b.Get(c)
+local g=e.operation
+
+if g=="status"then
+return f:Status()
+elseif g=="list"then
+return f:List(e)
+elseif g=="clear"then
+f:Clear()
+return{status="cleared",message="All remote spy logs have been cleared. Block and ignore rules are kept."}
+elseif g=="block"or g=="unblock"then
+return SetRule("block",e,g=="block")
+elseif g=="ignore"or g=="unignore"then
+return SetRule("ignore",e,g=="ignore")
+elseif g=="configure"then
+if e.enabled~=nil then f.Enabled=e.enabled==true end
+if e.includeBindables~=nil then f.IncludeBindables=e.includeBindables==true end
+if e.includeExecutorCalls~=nil then f.IncludeExecutorCalls=e.includeExecutorCalls==true end
+return f:Status()
+end
+
+error("Invalid remote-spy operation: "..tostring(g))
+end)
+end end function a.s():typeof(__modImpl())local b=a.cache.s if not b then b={c=__modImpl()}a.cache.s=b end return b.c end end do local function __modImpl()
 
 return function(b,c)
 local d=b.VirtualInputManager
@@ -3115,7 +3453,7 @@ status="success",
 message="Successfully fired click signals on Button."
 }
 end)
-end end function a.s():typeof(__modImpl())local b=a.cache.s if not b then b={c=__modImpl()}a.cache.s=b end return b.c end end do local function __modImpl()
+end end function a.t():typeof(__modImpl())local b=a.cache.t if not b then b={c=__modImpl()}a.cache.t=b end return b.c end end do local function __modImpl()
 
 return function(b)
 local c=b.CreateBridge
@@ -3162,9 +3500,9 @@ end
 local p={a.n()
 ,a.o()
 ,a.p()
-,a.q()
 ,a.r()
 ,a.s()
+,a.t()
 ,
 }
 for q,r in p do
@@ -3179,7 +3517,7 @@ f.bridge=nil
 end
 task.wait(1)
 end
-end end function a.t():typeof(__modImpl())local b=a.cache.t if not b then b={c=__modImpl()}a.cache.t=b end return b.c end end end
+end end function a.u():typeof(__modImpl())local b=a.cache.u if not b then b={c=__modImpl()}a.cache.u=b end return b.c end end end
 
 
 
@@ -3485,7 +3823,7 @@ until os.clock()>aa
 return nil
 end
 
-c.MCP_Loaded=true a.t()
+c.MCP_Loaded=true a.u()
 {
 Compatibility=b,
 Environment=c,

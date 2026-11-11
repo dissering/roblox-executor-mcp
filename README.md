@@ -23,7 +23,7 @@ Use it to see connected Roblox clients, inspect scripts, run tools, view server 
 - **Semantic Search** — Find scripts by behavior with a local embedding index (Ollama `embeddinggemma` or another provider).
 - **Console Output** — Read the client's output log.
 - **Instance Search** — CSS-like selectors and hierarchy trees.
-- **Remote Spy** — Intercept, log, block, and ignore Remotes/Bindables via [Cobalt](https://github.com/notpoiu/cobalt).
+- **Remote Spy** — Built-in spy that logs, blocks, ignores, and generates replay code for remote calls. Uses the strongest hook your executor has and still logs incoming events on executors without hooks.
 - **GUI Interaction** — Click buttons and type into text boxes.
 - **Screenshot** — Capture Roblox window screenshots (Windows only).
 - **Multi-Client** — Connect multiple Roblox clients at once.
@@ -43,7 +43,7 @@ Use it to see connected Roblox clients, inspect scripts, run tools, view server 
 | `get-script-content` | Decompiled source of a script, optionally a line range |
 | `script-grep` | Regex or literal search across all mapped script sources |
 | `semantic-search-scripts` | Search scripts by behavior using the semantic index |
-| `remote-spy` | Cobalt-based remote and bindable logging, blocking, and ignoring |
+| `remote-spy` | Log, block, ignore, and replay remote calls (outgoing and incoming) |
 | `click-button` / `type-text-box` | Interact with GUI buttons and text boxes |
 | `list-roblox-windows` / `screenshot-window` | List and capture Roblox windows (Windows only) |
 
@@ -66,7 +66,7 @@ The connector detects features instead of requiring a particular executor name o
 - Missing or failing identity setters leave the executor's current permissions in place. This keeps basic execution working; restricted APIs may still fail. Both MCP and dashboard execution use the same connector-side handling.
 - WebSocket aliases are supported, with HTTP polling as the fallback. The loader can also download through an HTTP request alias when `game:HttpGet` fails.
 - Without `firesignal`, button clicks use VirtualInputManager when permitted. This converts GUI positions to screen coordinates using [Roblox's GUI inset](https://create.roblox.com/docs/reference/engine/classes/GuiBase2d#AbsolutePosition), then sends mouse input to a visible, unobstructed button; down-only signal actions still require `firesignal`. An unavailable input service disables that feature rather than the whole connector.
-- Cobalt remote spying requires native hooking APIs. Missing prerequisites return a specific error before loading Cobalt; the bridge does not invent replacements for unsupported hooks.
+- The remote spy picks its outgoing mode from what the executor supports: `hookmetamethod` + `getnamecallmethod`, then a raw metatable swap (`getrawmetatable` + `setreadonly`), then `hookfunction` on `FireServer`/`InvokeServer`. Incoming `OnClientEvent` traffic is logged on every executor, with no hooks needed. Blocking incoming events needs `getconnections`. `remote-spy` with `operation=status` reports the active modes and what is missing.
 
 Update both the server and the connector (rerun the loader in a fresh Roblox client) to use connector-side identity handling.
 
