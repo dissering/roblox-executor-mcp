@@ -1,0 +1,96 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and regression tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.3.13"
+
+      - name: Install Darklua and Luau
+        run: |
+          set -euo pipefail
+
+          tools_dir="$RUNNER_TEMP/mcp-ci-tools"
+          mkdir -p "$tools_dir/bin"
+          cd "$tools_dir"
+
+          curl --fail --silent --show-error --location \
+            --retry 3 --connect-timeout 15 --max-time 180 \
+            https://github.com/seaofvoices/darklua/releases/download/v0.19.0/darklua-linux-x86_64.zip \
+            --output darklua.zip
+
+          curl --fail --silent --show-error --location \
+            --retry 3 --connect-timeout 15 --max-time 180 \
+            https://github.com/luau-lang/luau/releases/download/0.746/luau-ubuntu.zip \
+            --output luau.zip
+
+          printf '%s\n' \
+            '353b7a7772cec97994fd991fb3c143b39654ff154bd6dabfd7abf9fbe9ab7ea8  darklua.zip' \
+            '30f11c9cde8be2dc0e3066d210705532aac3726a2db89a6c5078080b6faa6cf8  luau.zip' \
+            | sha256sum --check --strict
+
+          unzip -q darklua.zip -d darklua
+          unzip -q luau.zip -d luau
+
+          install -m 0755 darklua/darklua "$tools_dir/bin/darklua"
+          install -m 0755 luau/luau "$tools_dir/bin/luau"
+
+          echo "$tools_dir/bin" >> "$GITHUB_PATH"
+
+      - name: Verify tool installation
+        run: |
+          set -euo pipefail
+          node --version
+          npm --version
+          test "$(bun --version)" = "1.3.13"
+          bun --version
+          darklua --version
+
+          printf '%s\n' \
+            'assert(type(require) == "function")' \
+            'print("Luau 0.746 smoke test passed")' \
+            > "$RUNNER_TEMP/luau-smoke.luau"
+          luau "$RUNNER_TEMP/luau-smoke.luau"
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build and run regression tests
+        run: npm test
+
+      - name: Verify dependency manifests remain unchanged
+        run: git diff --exit-code -- package.json bun.lock
