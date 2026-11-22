@@ -97,6 +97,7 @@ local Window = Fluent:CreateWindow({
 local Tabs = {
 	Main = Window:AddTab({ Title = "Main", Icon = "" }),
 	Bridge = Window:AddTab({ Title = "Bridge", Icon = "" }),
+	Autofish = Window:AddTab({ Title = "Autofish", Icon = "fishing-rod" }),
 	Features = Window:AddTab({ Title = "Features", Icon = "" }),
 	Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
 	Scripts = {},
@@ -332,6 +333,408 @@ Tabs.Bridge:AddToggle("ConnectOnLoad", {
 	end,
 })
 
+-- ── Autofish Feature ──
+
+local AutofishConfig = {
+	mode = "safe",
+	bubble_hold = 0.55,
+	lure_interval = 0.25,
+	recast_delay = 1.15,
+	stuck_seconds = 12.0,
+	deny_limit = 8,
+	min_charge = 1.0,
+	reel_interval = 0.1,
+	auto_on = true,
+}
+
+local Autofish = {
+	running = false,
+	conn = nil,
+	origCast = nil,
+	casts = 0,
+	catches = 0,
+	denies = 0,
+	last_activity = 0,
+	started_at = 0,
+}
+
+local function getSrc()
+	return game:GetService("ReplicatedStorage"):FindFirstChild("src")
+end
+
+local function getNetwork()
+	local src = getSrc()
+	if not src then return nil end
+	return src:FindFirstChild("network")
+end
+
+local function getPlayGui()
+	return game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
+end
+
+local function hudCanvas()
+	local pg = getPlayGui()
+	if not pg then return nil end
+	local folder = pg:FindFirstChild("fishing_hud")
+	if not folder then return nil end
+	local gui = folder:FindFirstChild("FishingHud")
+	if not gui then return nil end
+	return gui:FindFirstChild("canvas")
+end
+
+local function isWaiting()
+	local cv = hudCanvas()
+	return cv ~= nil and cv:FindFirstChild("lure") ~= nil
+end
+
+local function listen(channel, fn)
+	local network = getNetwork()
+	if not network then return false end
+	local ch = network[channel]
+	if not ch then return false end
+	local ev = ch.event
+	if not ev then return false end
+	return pcall(function()
+		ev.OnClientEvent:Connect(fn)
+	end)
+end
+
+local function now()
+	return os.clock()
+end
+
+local function installCastHook()
+	local network = getNetwork()
+	if not network then return false end
+	local ch = network.fishing_cast
+	if not ch or type(ch.fire) ~= "function" then return false end
+	Autofish.origCast = ch.fire
+	Autofish.castHook = ch.fire
+	ch.fire = function(...)
+		local t = now()
+		Autofish.casts = (Autofish.casts or 0) + 1
+		Autofish.last_activity = t
+		return Autofish.origCast(...)
+	end
+	return true
+end
+
+local function removeCastHook()
+	local network = getNetwork()
+	if not network then return end
+	local ch = network.fishing_cast
+	if ch and Autofish.castHook then
+		ch.fire = Autofish.castHook
+	end
+	Autofish.castHook = nil
+	Autofish.origCast = nil
+end
+
+local function step()
+	if not Autofish.running then return end
+	local t = now()
+
+	local Intents = getSrc() and getSrc():FindFirstChild("client") and getSrc().client:FindFirstChild("fishing_intents")
+	if Intents then
+		local reel_press = Intents:FindFirstChild("reel_press")
+		if reel_press and type(reel_press.Fire) == "function" then
+			reel_press:Fire(t)
+		end
+		local bubble_down = Intents:FindFirstChild("bubble_down")
+		if bubble_down and type(bubble_down.Fire) == "function" then
+			bubble_down:Fire(t)
+		end
+	end
+
+	local UserInput = getSrc() and getSrc():FindFirstChild("client") and getSrc().client:FindFirstChild("user_input")
+	if UserInput then
+		local attack_up = UserInput:FindFirstChild("attack_up")
+		if attack_up and type(attack_up.Fire) == "function" then
+			attack_up:Fire(t)
+		end
+	end
+
+	if t - (Autofish.last_release or 0) >= AutofishConfig.bubble_hold then
+		Autofish.last_release = t
+		local Intents2 = getSrc() and getSrc():FindFirstChild("client") and getSrc().client:FindFirstChild("fishing_intents")
+		if Intents2 then
+			local bubble_up = Intents2:FindFirstChild("bubble_up")
+			if bubble_up and type(bubble_up.Fire) == "function" then
+				bubble_up:Fire(t)
+			end
+		end
+	end
+
+	if AutofishConfig.mode == "fast" then
+		local UserInput2 = getSrc() and getSrc():FindFirstChild("client") and getSrc().client:FindFirstChild("user_input")
+		local waiting = isWaiting()
+		local mayCast = not waiting
+			and t - (Autofish.last_bite or 0) > 2.0
+			and t - (Autofish.last_cast or 0) > 2.0
+		local wantCast = t >= (Autofish.idle_at or 0)
+		local stuck = t - Autofish.last_activity >= AutofishConfig.stuck_seconds
+
+		if waiting then
+			if t - (Autofish.last_lure or 0) >= AutofishConfig.lure_interval then
+				Autofish.last_lure = t
+				if UserInput2 then
+					local skill_one = UserInput2:FindFirstChild("skill_one")
+					if skill_one and type(skill_one.Fire) == "function" then
+						skill_one:Fire(t)
+					end
+				end
+			end
+		end
+
+		if mayCast and (wantCast or stuck) then
+			Autofish.idle_at = t + AutofishConfig.min_charge
+			Autofish.last_activity = t
+			if UserInput2 then
+				local attack = UserInput2:FindFirstChild("attack")
+				if attack and type(attack.Fire) == "function" then
+					attack:Fire(t)
+				end
+			end
+		end
+	else
+		local Intents3 = getSrc() and getSrc():FindFirstChild("client") and getSrc().client:FindFirstChild("fishing_intents")
+		if Intents3 and AutofishConfig.auto_on then
+			if not Autofish.autoSent then
+				Autofish.autoSent = true
+				local auto_on = Intents3:FindFirstChild("auto_on")
+				if auto_on and type(auto_on.Fire) == "function" then
+					auto_on:Fire(t)
+				end
+			end
+			if t - (Autofish.last_reel or 0) >= AutofishConfig.reel_interval then
+				Autofish.last_reel = t
+			end
+		end
+	end
+
+	if (Autofish.denies or 0) >= AutofishConfig.deny_limit then
+		Autofish.running = false
+		AutofishNotify("[AutoFish] stopped after " .. Autofish.denies .. " denials -- face the water and retry.")
+	end
+end
+
+function AutofishStart()
+	if Autofish.running then return "already running" end
+
+	Autofish.running = true
+	Autofish.autoSent = false
+	Autofish.casts = 0
+	Autofish.catches = 0
+	Autofish.denies = 0
+	Autofish.started_at = now()
+	Autofish.last_activity = Autofish.started_at
+	Autofish.last_cast = 0
+	Autofish.last_bite = 0
+	Autofish.last_catch = 0
+	Autofish.last_deny = 0
+	Autofish.last_lure = 0
+	Autofish.last_release = 0
+	Autofish.last_reel = 0
+	Autofish.idle_at = Autofish.started_at + 1.0
+
+	installCastHook()
+
+	local RunService = game:GetService("RunService")
+
+	listen("fishing_bite", function()
+		Autofish.last_bite = now()
+		Autofish.last_activity = Autofish.last_bite
+	end)
+
+	listen("fishing_caught_item", function()
+		Autofish.catches = (Autofish.catches or 0) + 1
+		Autofish.last_catch = now()
+		Autofish.last_activity = Autofish.last_catch
+		Autofish.idle_at = Autofish.last_catch + AutofishConfig.recast_delay
+	end)
+
+	listen("fishing_denied", function()
+		Autofish.denies = (Autofish.denies or 0) + 1
+		Autofish.last_deny = now()
+		Autofish.last_activity = Autofish.last_deny
+		Autofish.idle_at = Autofish.last_deny + 2.0
+	end)
+
+	Autofish.conn = RunService.RenderStepped:Connect(step)
+	print("[AutoFish] started (mode=" .. AutofishConfig.mode .. ")")
+	AutofishUpdateStats()
+	return "started"
+end
+
+function AutofishStop()
+	Autofish.running = false
+	if Autofish.conn then
+		Autofish.conn:Disconnect()
+		Autofish.conn = nil
+	end
+	removeCastHook()
+	pcall(function()
+		local Intents4 = getSrc() and getSrc():FindFirstChild("client") and getSrc().client:FindFirstChild("fishing_intents")
+		if Intents4 then
+			local auto_off = Intents4:FindFirstChild("auto_off")
+			if auto_off and type(auto_off.Fire) == "function" then
+				auto_off:Fire(now())
+			end
+		end
+	end)
+	Autofish.autoSent = false
+	print("[AutoFish] stopped")
+	AutofishUpdateStats()
+	return "stopped"
+end
+
+function AutofishToggle()
+	if Autofish.running then return AutofishStop() end
+	return AutofishStart()
+end
+
+function AutofishStats()
+	local t = now()
+	local elapsed = t - Autofish.started_at
+	local rate = elapsed > 0 and (Autofish.catches / elapsed * 60) or 0
+	return string.format(
+		"casts=%d catches=%d denies=%d rate=%.2f/min",
+		Autofish.casts or 0, Autofish.catches or 0, Autofish.denies or 0, rate
+	)
+end
+
+function AutofishNotify(content)
+	Base:Notify({ Title = "AutoFish", Content = content, Duration = 5 })
+end
+
+function AutofishUpdateStats()
+	if AutofishStatsParam then
+		pcall(function()
+			AutofishStatsParam:SetDesc(AutofishStats() .. " | mode=" .. AutofishConfig.mode)
+		end)
+	end
+end
+
+local AutofishToggleEl
+local AutofishModeParam
+local AutofishBubbleParam
+local AutofishLureParam
+local AutofishRecastParam
+local AutofishStuckParam
+local AutofishDenyParam
+local AutofishStatsParam
+
+function AutofishBuildTab(tab)
+	tab:AddParagraph({
+		Title = "Auto Fish",
+		Content = "Auto-fishing for Pixel Blade. Toggle to start/stop.",
+	})
+
+	AutofishToggleEl = tab:AddToggle("AutofishToggle", {
+		Title = "Auto Fish",
+		Description = "Start/stop autofishing",
+		Default = false,
+		Callback = function(state)
+			if state then
+				AutofishStart()
+			else
+				AutofishStop()
+			end
+		end,
+	})
+
+	AutofishModeParam = tab:AddDropdown("AutofishMode", {
+		Title = "Mode",
+		Options = { "safe", "fast" },
+		Default = "safe",
+		Multi = false,
+		Callback = function(value)
+			AutofishConfig.mode = value
+			AutofishUpdateStats()
+		end,
+	})
+
+	tab:AddInput("AutofishBubble", {
+		Title = "Bubble Hold (s)",
+		Default = tostring(AutofishConfig.bubble_hold),
+		Number = true,
+		Finished = true,
+		Callback = function(value)
+			AutofishConfig.bubble_hold = tonumber(value) or 0.55
+		end,
+	})
+
+	tab:AddInput("AutofishLure", {
+		Title = "Lure Interval (s)",
+		Default = tostring(AutofishConfig.lure_interval),
+		Number = true,
+		Finished = true,
+		Callback = function(value)
+			AutofishConfig.lure_interval = tonumber(value) or 0.25
+		end,
+	})
+
+	tab:AddInput("AutofishRecast", {
+		Title = "Recast Delay (s)",
+		Default = tostring(AutofishConfig.recast_delay),
+		Number = true,
+		Finished = true,
+		Callback = function(value)
+			AutofishConfig.recast_delay = tonumber(value) or 1.15
+		end,
+	})
+
+	tab:AddInput("AutofishStuck", {
+		Title = "Stuck Timeout (s)",
+		Default = tostring(AutofishConfig.stuck_seconds),
+		Number = true,
+		Finished = true,
+		Callback = function(value)
+			AutofishConfig.stuck_seconds = tonumber(value) or 12.0
+		end,
+	})
+
+	tab:AddInput("AutofishDeny", {
+		Title = "Deny Limit (auto-stop)",
+		Default = tostring(AutofishConfig.deny_limit),
+		Number = true,
+		Finished = true,
+		Callback = function(value)
+			AutofishConfig.deny_limit = tonumber(value) or 8
+		end,
+	})
+
+	AutofishStatsParam = tab:AddParagraph({
+		Title = "Stats",
+		Content = "Not running",
+	})
+
+	tab:AddButton({
+		Title = "Reset Stats",
+		Description = "Reset cast/catch/deny counters",
+		Callback = function()
+			Autofish.casts = 0
+			Autofish.catches = 0
+			Autofish.denies = 0
+			AutofishUpdateStats()
+			AutofishNotify("Stats reset")
+		end,
+	})
+
+	tab:AddButton({
+		Title = "Force Stop",
+		Description = "Immediately stop autofish",
+		Callback = function()
+			if Autofish.running then
+				AutofishToggleEl:SetValue(false)
+				AutofishStop()
+			end
+		end,
+	})
+end
+
+AutofishBuildTab(Tabs.Autofish)
+
 Tabs.Features:AddParagraph({
 	Title = "Feature registry",
 	Content = "Each toggle below is a feature with its own start/stop lifecycle.",
@@ -553,11 +956,11 @@ end
 
 getgenv().CopilotBase = Base
 
-Window:SelectTab(4)
+Window:SelectTab(3)
 
 Base:Notify({
 	Title = "Copilot Base " .. Base.Version,
-	Content = "Interface loaded. Bridge: " .. CONFIG.BridgeURL .. " | Scripts paused until push.",
+	Content = "Interface loaded. Bridge: " .. CONFIG.BridgeURL .. " | Autofish ready in tab 3.",
 	Duration = 6,
 })
 
