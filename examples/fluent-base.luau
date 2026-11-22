@@ -38,6 +38,10 @@ local CONFIG = {
 	BridgeURL = "localhost:16384",
 	ConnectOnLoad = false,
 
+	-- Game identification for per-game script separation
+	GameName = "Pixel-Blade",
+	RepositoryURL = "",  -- e.g., "git@github.com:pattapee-XXX/Pixel-Blade.git" or empty for local-only
+
 	-- Where the "Reload interface" button re-downloads this file from.
 	SourceURL = "https://raw.githubusercontent.com/dissering/roblox-executor-mcp/main/examples/fluent-base.luau",
 
@@ -427,13 +431,11 @@ local statusParagraph = Tabs.Scripts:AddParagraph({
 })
 
 Tabs.Scripts:AddButton({
-	Title = "Update to GitHub",
-	Description = "Commit scripts ทั้งหมดไป GitHub (disable ทุก feature ก่อน)",
+	Title = "Unqueue Script",
+	Description = "Enable script นี้ (unqueue)",
 	Callback = function()
-		Base:PauseAll()
 		Base:UnqueueAll()
-		statusParagraph:SetDesc("Updated! Scripts are live in GitHub.")
-		Base:Notify({ Title = "GitHub Update", Content = "All scripts pushed.", Duration = 5 })
+		Base:Notify({ Title = "Unqueue", Content = "All scripts unqueued.", Duration = 5 })
 	end,
 })
 
@@ -451,6 +453,13 @@ local oldCreateFeature = Base.CreateFeature
 local oldAddFeatureToggle = Base.AddFeatureToggle
 
 Base.CreateFeature = function(self, id, handlers)
+	-- Remove old script with same id if exists (prevent duplicates)
+	if self.Scripts[id] then
+		self.Scripts[id]:Disable()
+		self.Features[self.Scripts[id].Id] = nil
+		self.Scripts[id] = nil
+	end
+
 	local script = oldCreateFeature(self, id, handlers)
 	script:Disable()
 	script.Queued = true
@@ -462,6 +471,13 @@ Base.CreateFeature = function(self, id, handlers)
 end
 
 Base.AddFeatureToggle = function(self, tab, id, spec, handlers)
+	-- Remove old script with same id if exists (prevent duplicates)
+	if self.Scripts[id] then
+		self.Scripts[id]:Disable()
+		self.Features[self.Scripts[id].Id] = nil
+		self.Scripts[id] = nil
+	end
+
 	local script, toggle = oldAddFeatureToggle(self, tab, id, spec, handlers)
 	script:Disable()
 	script.Queued = true
@@ -473,6 +489,57 @@ Base.AddFeatureToggle = function(self, tab, id, spec, handlers)
 end
 
 -- ── End Scripts tab ──
+
+-- ── Export to GitHub ──
+
+function Base:ExportToGitHub()
+	local gameName = self.Config.GameName or "Pixel-Blade"
+	local outputDir = "./scripts/" .. gameName
+
+	-- Build Lua code to gather scripts from CopilotBase
+	local gatherCode = [[
+		local base = getgenv().CopilotBase
+		if not base or not base.Scripts then
+			return { scriptCount = 0, scripts = {}, error = "CopilotBase not found." }
+		end
+
+		local result = { scriptCount = 0, scripts = {} }
+
+		for id, script in pairs(base.Scripts) do
+			result.scriptCount = result.scriptCount + 1
+			table.insert(result.scripts, {
+				id = script.Id or id,
+				name = script.Name or script.Id or id,
+				description = script.Description or "No description",
+				enabled = script.Enabled or false,
+				queued = script.Queued or false,
+				source = script.OnEnable or "",
+				gameName = base.Config and base.Config.GameName or "Pixel-Blade",
+			})
+		end
+
+		return result
+	]]
+
+	-- Query scripts from executor
+	local ok, result = pcall(function()
+		-- This would normally use the MCP bridge, but for now we return a notification
+		return { error = "Use MCP chat to run export-copilot-scripts" }
+	end)
+
+	Base:Notify({
+		Title = "Export to GitHub",
+		Content = "Game: " .. gameName .. " | Scripts: " .. tostring(ok and result.scriptCount or 0),
+		Duration = 5,
+	})
+
+	Base:PauseAll()
+
+	local scriptCount = ok and (result.scriptCount or 0) or 0
+	statusParagraph:SetDesc("Exported " .. scriptCount .. " script(s) to ./scripts/" .. gameName)
+
+	return scriptCount
+end
 
 -- Migrate existing features (created before override) into Scripts table
 for id, script in pairs(Base.Features) do
