@@ -27,8 +27,16 @@
     "update": "bun scripts/install-harnesses.mjs --update",
     "prepare": "bun run build"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "roblox",
+    "mcp",
+    "copilot",
+    "lua",
+    "luau",
+    "game",
+    "automation"
+  ],
+  "author": "dissering",
   "license": "ISC",
   "packageManager": "bun@1.3.13",
   "dependencies": {
