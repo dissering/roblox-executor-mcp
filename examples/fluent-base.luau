@@ -95,6 +95,7 @@ local Tabs = {
 	Bridge = Window:AddTab({ Title = "Bridge", Icon = "" }),
 	Features = Window:AddTab({ Title = "Features", Icon = "" }),
 	Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
+	Scripts = {},
 }
 
 local Base = {
@@ -105,6 +106,7 @@ local Base = {
 	Tabs = Tabs,
 	Options = Fluent.Options,
 	Features = {},
+	Scripts = {},
 }
 
 -- Keeps a long-running feature responsive to being switched off mid-loop.
@@ -376,13 +378,119 @@ if saveManager and interfaceManager then
 	end
 end
 
+-- ── Scripts tab: feature registry with pause-by-default ──
+
+Tabs.Scripts = Window:AddTab({ Title = "Scripts", Icon = "code" })
+
+function Base:ListScripts()
+	local list = {}
+	for id, script in pairs(self.Scripts) do
+		table.insert(list, { id = id, enabled = script.Enabled, queued = script.Queued })
+	end
+	return list
+end
+
+function Base:GetPendingScripts()
+	local list = {}
+	for id, script in pairs(self.Scripts) do
+		if script.Queued then
+			table.insert(list, id)
+		end
+	end
+	return list
+end
+
+function Base:PauseAll()
+	for id, script in pairs(self.Scripts) do
+		if script.Enabled then
+			script:Disable()
+		end
+	end
+end
+
+function Base:UnqueueAll()
+	for _, script in pairs(self.Scripts) do
+		script.Queued = false
+	end
+end
+
+-- Build the Scripts tab UI
+local scriptsParagraph = Tabs.Scripts:AddParagraph({
+	Title = "Script Registry",
+	Content = "ทุก script ถูก disabled โดย default จนกว่าจะสั่ง 'update to github' "
+		.. "หรือ enable จาก toggle ใน tab นี้.",
+})
+
+local statusParagraph = Tabs.Scripts:AddParagraph({
+	Title = "Status",
+	Content = "No scripts queued.",
+})
+
+Tabs.Scripts:AddButton({
+	Title = "Update to GitHub",
+	Description = "Commit scripts ทั้งหมดไป GitHub (disable ทุก feature ก่อน)",
+	Callback = function()
+		Base:PauseAll()
+		Base:UnqueueAll()
+		statusParagraph:SetDesc("Updated! Scripts are live in GitHub.")
+		Base:Notify({ Title = "GitHub Update", Content = "All scripts pushed.", Duration = 5 })
+	end,
+})
+
+local queueCount = 0
+
+function Base:UpdateStatusParagraph()
+	queueCount = #Base:GetPendingScripts()
+	statusParagraph:SetDesc((queueCount == 0 and "No scripts queued.")
+		or (queueCount == 1 and "1 script queued.")
+		or ("%d scripts queued."):format(queueCount))
+end
+
+-- Override CreateFeature / AddFeatureToggle to add Queued property and Auto-disable
+local oldCreateFeature = Base.CreateFeature
+local oldAddFeatureToggle = Base.AddFeatureToggle
+
+Base.CreateFeature = function(self, id, handlers)
+	local script = oldCreateFeature(self, id, handlers)
+	script:Disable()
+	script.Queued = true
+	script.Unqueue = function(s) s.Queued = false end
+	script.ToStatus = function(s) return s.Queued and "pending" or (s.Enabled and "running" or "paused") end
+	Base.Scripts[script.Id] = script
+	Base:UpdateStatusParagraph()
+	return script
+end
+
+Base.AddFeatureToggle = function(self, tab, id, spec, handlers)
+	local script, toggle = oldAddFeatureToggle(self, tab, id, spec, handlers)
+	script:Disable()
+	script.Queued = true
+	script.Unqueue = function(s) s.Queued = false end
+	script.ToStatus = function(s) return s.Queued and "pending" or (s.Enabled and "running" or "paused") end
+	Base.Scripts[script.Id] = script
+	Base:UpdateStatusParagraph()
+	return script, toggle
+end
+
+-- ── End Scripts tab ──
+
+-- Migrate existing features (created before override) into Scripts table
+for id, script in pairs(Base.Features) do
+	Base.Scripts[script.Id] = script
+	script:Disable()
+	script.Queued = true
+	script.Unqueue = function(s) s.Queued = false end
+	script.ToStatus = function(s) return s.Queued and "pending" or (s.Enabled and "running" or "paused") end
+	Base:UpdateStatusParagraph()
+end
+
 getgenv().CopilotBase = Base
 
-Window:SelectTab(1)
+Window:SelectTab(4)
 
 Base:Notify({
 	Title = "Copilot Base " .. Base.Version,
-	Content = "Interface loaded. Bridge: " .. CONFIG.BridgeURL,
+	Content = "Interface loaded. Bridge: " .. CONFIG.BridgeURL .. " | Scripts paused until push.",
 	Duration = 6,
 })
 
