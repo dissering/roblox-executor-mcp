@@ -47,6 +47,35 @@ Use it to see connected Roblox clients, inspect scripts, run tools, view server 
 | `click-button` / `type-text-box` | Interact with GUI buttons and text boxes |
 | `list-roblox-windows` / `screenshot-window` | List and capture Roblox windows (Windows only) |
 
+## GUI base
+
+[`examples/fluent-base.luau`](examples/fluent-base.luau) is a ready-to-run
+[Fluent](https://github.com/dawid-scripts/Fluent) interface base for scripts
+written in this chat. Run it with `execute-file examples/fluent-base.luau`, then
+hang features off it from the chat:
+
+```lua
+local Base = getgenv().CopilotBase
+local feature = Base:CreateFeature("autofish", {
+    -- loops should use self:Sleep so a toggle can stop them mid-wait
+    OnEnable = function(self)
+        while self:Sleep(1) do
+            -- do work
+        end
+    end,
+})
+feature:Enable()
+```
+
+It provides:
+
+- A **feature registry** (`CreateFeature` / `AddFeatureToggle`) so every feature
+  has a start/stop lifecycle, a toggle, and a safe sleep that aborts on disable.
+- A **Bridge** tab to (re)connect this client to the local MCP server, plus an
+  optional connect-on-load.
+- Unload / reload buttons, Fluent `Notify`, and the optional SaveManager and
+  InterfaceManager addons under a **Settings** tab.
+
 ## Tutorial
 
 [![roblox-executor-mcp installation guide](http://img.youtube.com/vi/Tcy5RNf1TRc/0.jpg)](https://youtube.com/watch?v=Tcy5RNf1TRc)
