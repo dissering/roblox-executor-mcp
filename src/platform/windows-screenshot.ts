@@ -17,8 +17,8 @@ export interface ScreenshotResult {
   mimeType?: string;
 }
 
-export const DEFAULT_SCREENSHOT_MAX_WIDTH = 1280;
-export const DEFAULT_SCREENSHOT_JPEG_QUALITY = 70;
+export const DEFAULT_SCREENSHOT_MAX_WIDTH = 2560;
+export const DEFAULT_SCREENSHOT_JPEG_QUALITY = 90;
 
 export function isSupported(): boolean {
   return process.platform === "win32";
